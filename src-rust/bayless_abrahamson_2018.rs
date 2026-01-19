@@ -1,7 +1,7 @@
-//! Effective amplitude spectra ground motion model (Bayless and Abrahamson 2018) with modifications (Kuncar F. et al 2025).
+//! Site amplification factor based on the effective amplitude spectra ground motion model (Bayless and Abrahamson 2018) with modifications (Kuncar F. et al 2025).
 //!
-//! This module implements the BA18 module with nonlinearity and kappa
-//! extrapolation. It does not implement Z1.0 scaling.
+//! This module implements the site amplification factor based on the BA18 model
+//! with nonlinearity and kappa extrapolation. It does not implement Z1.0 scaling.
 //!
 //! # Reference
 //! Bayless, J., & Abrahamson, N. A. (2019). Summary of the BA18
@@ -23,7 +23,7 @@ struct BA18Constants {
     pub v1: f64,                 // Linear reference velocity (1000 m/s)
     pub v_ref: f64,              // Nonlinear reference velocity (760 m/s)
     pub f_kappa_transition: f64, // Frequency for kappa extrapolation (24 Hz)
-    pub ref_c8_idx: usize,       // Index for c8 at transition frequency
+    pub ref_c8_idx: usize,       // Index for c8 at kappa extrapolation frequency
     pub ir_ref_c8_idx: usize,    // Index for c8 at 5Hz (Intensity Reference)
 }
 
@@ -36,9 +36,9 @@ const CONSTANTS: BA18Constants = BA18Constants {
 };
 
 pub struct SiteProperties {
-    pub vs30: f64,
-    pub vs_host: f64, // Host site Vs30 (vs_sim)
-    pub pga: f64,     // Recorded PGA at site
+    pub vs30: f64,     // Site Vs30
+    pub vs30_sim: f64, // Simulation Vs30
+    pub pga: f64,      // Recorded PGA at site
 }
 
 /// Finds the minimum nonlinear site factor across the spectrum to enforce
@@ -103,10 +103,10 @@ pub fn calc_f_s(site: &SiteProperties, ir: f64, f_min: f64, f_nl_min: f64, idx: 
     let c8 = C8[idx];
     let freq = FREQUENCIES[idx];
 
-    // Linear amplification ratio relative to host simulation velocity
+    // Linear amplification ratio relative to simulation velocity
     let f_sl_vs = calc_linear_site_factor_with_kappa(site.vs30, c8, freq);
-    let f_sl_host = calc_linear_site_factor_with_kappa(site.vs_host, c8, freq);
-    let linear_ratio = f_sl_vs / f_sl_host;
+    let f_sl_sim = calc_linear_site_factor_with_kappa(site.vs30_sim, c8, freq);
+    let linear_ratio = f_sl_vs / f_sl_sim;
 
     // Get non-linear term f_nl
     let f2 = calc_f2(site.vs30, CONSTANTS.v_ref, F4[idx], F5[idx]);
@@ -121,12 +121,12 @@ pub fn calc_f_s(site: &SiteProperties, ir: f64, f_min: f64, f_nl_min: f64, idx: 
 fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     // Calculate induced intensity (Ir) based on Equation 10e
     let c8_5hz = C8[CONSTANTS.ir_ref_c8_idx];
-    let ir_vs = calc_f_sl_exponent(CONSTANTS.v_ref, c8_5hz);
-    let ir_host = calc_f_sl_exponent(site.vs_host, c8_5hz);
-    // This IR calculation is derived in the e-Supp to Kunar et al. 2025
+    let ir_ref_vs = calc_f_sl_exponent(CONSTANTS.v_ref, c8_5hz);
+    let ir_sim = calc_f_sl_exponent(site.vs30_sim, c8_5hz);
+    // This IR calculation is derived in the e-Supp to Kuncar et al. 2025
     // Equation B.2 of
     // https://journals.sagepub.com/doi/suppl/10.1177/87552930241301059/suppl_file/sj-pdf-1-eqs-10.1177_87552930241301059.pdf
-    let ir = site.pga * (ir_vs / ir_host).powf(0.846);
+    let ir = site.pga * (ir_ref_vs / ir_sim).powf(0.846);
     let (f_min, f_nl_min) = calc_min_f_nl(ir, site.vs30, CONSTANTS.v_ref);
     (ir, f_min, f_nl_min)
 }
@@ -224,7 +224,7 @@ mod tests {
     fn test_computed_site_factors() {
         let site_properties = SiteProperties {
             vs30: 650.0,
-            vs_host: 500.0,
+            vs30_sim: 500.0,
             pga: 0.46,
         };
         let (ir, f_min, f_nl_min) = calc_nl_ir_parameters(&site_properties);
@@ -250,7 +250,11 @@ mod tests {
             let vs_host: f64 = record.get(1).ok_or("Missing vs_sim")?.parse()?;
             let pga: f64 = record.get(2).ok_or("Missing pga_high")?.parse()?;
 
-            let site_properties = SiteProperties { vs30, vs_host, pga };
+            let site_properties = SiteProperties {
+                vs30,
+                vs30_sim: vs_host,
+                pga,
+            };
             let mut expected_site_factors: Vec<f64> = Vec::with_capacity(FREQUENCIES.len());
 
             for (i, &freq) in FREQUENCIES.iter().enumerate() {
