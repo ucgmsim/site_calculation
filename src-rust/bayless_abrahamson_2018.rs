@@ -1,4 +1,4 @@
-//! Effective amplitude spectra ground motion model (Bayless and Abrahamson 2018).
+//! Effective amplitude spectra ground motion model (Bayless and Abrahamson 2018) with modifications (Kuncar F. et al 2025).
 //!
 //! This module implements the BA18 module with nonlinearity and kappa
 //! extrapolation. It does not implement Z1.0 scaling.
@@ -8,6 +8,11 @@
 //! ground‐motion model for Fourier amplitude spectra for crustal
 //! earthquakes in California. Bulletin of the Seismological Society
 //! of America, 109(5), 2088-2105.
+//!
+//! Kuncar F, Bradley BA, de la Torre CA, Rodriguez-Marek A, Zhu C,
+//! Lee RL. Methods to account for shallow site effects in hybrid
+//! broadband ground-motion simulations. Earthquake Spectra.
+//! 2025;41(2):1272-1313.
 
 use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
 use ndarray::prelude::*;
