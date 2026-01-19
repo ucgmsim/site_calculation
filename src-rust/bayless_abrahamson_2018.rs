@@ -144,6 +144,7 @@ mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
     use std::error::Error;
+    use std::path::PathBuf;
 
     #[test]
     fn test_f_sl_exponent() {
@@ -235,9 +236,12 @@ mod tests {
 
     #[test]
     fn test_computed_site_factors_from_csv() -> Result<(), Box<dyn Error>> {
-        let mut rdr = csv::Reader::from_path(
-            "/home/jake/src/site_calculation/src-rust/data/site_factors_data.csv",
-        )?;
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("tests");
+        path.push("resources");
+        path.push("site_factors_data.csv");
+
+        let mut rdr = csv::Reader::from_path(path)?;
 
         for result in rdr.records() {
             let record = result?;
