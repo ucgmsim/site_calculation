@@ -118,7 +118,9 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     let c8_5hz = C8[CONSTANTS.ir_ref_c8_idx];
     let ir_vs = calc_f_sl_exponent(CONSTANTS.v_ref, c8_5hz);
     let ir_host = calc_f_sl_exponent(site.vs_host, c8_5hz);
-    // This IR calculation is derived in
+    // This IR calculation is derived in the e-Supp to Kunar et al. 2025
+    // Equation B.2 of
+    // https://journals.sagepub.com/doi/suppl/10.1177/87552930241301059/suppl_file/sj-pdf-1-eqs-10.1177_87552930241301059.pdf
     let ir = site.pga * (ir_vs / ir_host).powf(0.846);
     let (f_min, f_nl_min) = calc_min_f_nl(ir, site.vs30, CONSTANTS.v_ref);
     (ir, f_min, f_nl_min)
