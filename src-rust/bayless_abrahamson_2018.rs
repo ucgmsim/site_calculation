@@ -15,7 +15,9 @@
 //! 2025;41(2):1272-1313.
 
 use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
+use crate::site::SiteProperties;
 use ndarray::prelude::*;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::f64::consts::PI;
 
 /// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
@@ -34,12 +36,6 @@ const CONSTANTS: BA18Constants = BA18Constants {
     ref_c8_idx: 238,
     ir_ref_c8_idx: 170, // Corresponds to 5Hz for Ir calculation
 };
-
-pub struct SiteProperties {
-    pub vs30: f64,     // Site Vs30
-    pub vs30_sim: f64, // Simulation Vs30
-    pub pga: f64,      // Recorded PGA at site
-}
 
 /// Finds the minimum nonlinear site factor across the spectrum to enforce
 /// model constraints on soil softening.
@@ -131,17 +127,29 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     (ir, f_min, f_nl_min)
 }
 
-pub fn bayless_abrahamson_2018_eas(site: &SiteProperties) -> Array1<f64> {
+fn bayless_abrahamson_2018_eas_one(site: &SiteProperties, mut out: ArrayViewMut1<f64>) {
     // This is calculated once because it is independent of frequency.
     let (ir, f_min, f_nl_min) = calc_nl_ir_parameters(site);
     (0..FREQUENCIES.len())
-        .map(|idx| calc_f_s(site, ir, f_min, f_nl_min, idx))
-        .collect()
+        .zip(out.iter_mut())
+        .for_each(|(idx, out)| *out = calc_f_s(site, ir, f_min, f_nl_min, idx));
+}
+
+pub fn bayless_abrahamson_2018_eas(sites: &[SiteProperties]) -> Array2<f64> {
+    let n_stations = sites.len();
+    let n_frequencies = FREQUENCIES.len();
+    let mut out = Array2::default((n_stations, n_frequencies));
+    sites
+        .par_iter()
+        .zip(out.axis_iter_mut(Axis(0)))
+        .for_each(|(site, out_amp)| bayless_abrahamson_2018_eas_one(site, out_amp));
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::assert_amplification_approx_eq;
     use approx::assert_abs_diff_eq;
     use std::error::Error;
     use std::path::PathBuf;
@@ -269,7 +277,11 @@ mod tests {
                 let expected_sf = expected_sf_str.parse()?;
                 expected_site_factors.push(expected_sf)
             }
-            let calculated_site_factors_array = bayless_abrahamson_2018_eas(&site_properties);
+            let mut calculated_site_factors_array = Array1::default(FREQUENCIES.len());
+            bayless_abrahamson_2018_eas_one(
+                &site_properties,
+                calculated_site_factors_array.view_mut(),
+            );
             let expected_site_factors_array = Array1::from_vec(expected_site_factors);
             assert_abs_diff_eq!(
                 calculated_site_factors_array,
