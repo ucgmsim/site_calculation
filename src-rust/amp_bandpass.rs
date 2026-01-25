@@ -29,10 +29,6 @@ fn amp_bandpass_one(
     );
 }
 
-fn fftfreq(n: usize, dt: f64) -> Array1<f64> {
-    Array1::from_shape_fn(n.div(2) + 1, |n| n as f64) / (dt * (n as f64))
-}
-
 fn interp(
     xp: ArrayView1<f64>,
     x_out: ArrayView1<f64>,

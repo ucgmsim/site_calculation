@@ -82,7 +82,7 @@ fn compute_fs_value(vs30: f64, a1100: f64, c11: f64, k1: f64, k2: f64) -> f64 {
 }
 
 /// Computes the site amplification factor relative to the simulation reference.
-fn cb_amp(site: &SiteProperties) -> Array1<f64> {
+fn campbell_bozorgnia_2014_one(site: &SiteProperties, mut out: ArrayViewMut1<f64>) {
     let c11_1000hz = C11[CONSTANTS.idx_1000hz];
     let k1_1000hz = K1[CONSTANTS.idx_1000hz];
     let k2_1000hz = K2[CONSTANTS.idx_1000hz];
@@ -96,14 +96,26 @@ fn cb_amp(site: &SiteProperties) -> Array1<f64> {
     Zip::from(&C11)
         .and(&K1)
         .and(&K2)
-        .map_collect(|&c11, &k1, &k2| {
+        .and(out)
+        .for_each(|&c11, &k1, &k2, out| {
             // f_site for the actual site conditions
             let fs_site = compute_fs_value(site.vs30, a1100, c11, k1, k2);
             // f_site for the simulation reference (linear rock baseline)
             let fs_sim = compute_fs_value(site.vs30_sim, 0.0, c11, k1, k2);
             // Amplification = exp(f_site_actual - f_site_sim)
-            (fs_site - fs_sim).exp()
+            *out = (fs_site - fs_sim).exp();
         })
+}
+
+pub fn campbell_bozorgnia_2014(sites: &[SiteProperties]) -> Array2<f64> {
+    let n_stations = sites.len();
+    let n_frequencies = FREQUENCIES.len();
+    let mut out = Array2::default((n_stations, n_frequencies));
+    sites
+        .iter()
+        .zip(out.axis_iter_mut(Axis(0)))
+        .for_each(|(site, out_amp)| campbell_bozorgnia_2014_one(site, out_amp));
+    out
 }
 
 #[cfg(test)]
@@ -148,7 +160,7 @@ mod tests {
                 let expected_sf = expected_sf_str.parse()?;
                 expected_site_factors.push(expected_sf)
             }
-            let calculated_site_factors_array = cb_amp(&site_properties);
+            let calculated_site_factors_array = campbell_bozorgnia_2014_one(&site_properties);
             let expected_site_factors_array = Array1::from_vec(expected_site_factors);
             let calculated_slice = calculated_site_factors_array.slice(s![..-1]);
             let ctxt = format!("Site properties = {:?}", site_properties);

@@ -3,19 +3,29 @@ requires = ["setuptools", "setuptools-scm", "setuptools-rust>=1.1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "im-calculation"
+name = "site-calculation"
 authors = [{ name = "ucgmsim" }]
 description = "Site calculation models, including source-site distances and amplification models"
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+    "numpy>=2.4.1",
+    "pandas>=3.0.0",
+    "scipy>=1.17.0",
+]
 
 [tool.setuptools_scm]
 
 [project.optional-dependencies]
-test = ["pytest", "hypothesis[numpy]", "pytest-cov"]
-types = []
+test = [
+    "hypothesis[numpy]>=6.151.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
+types = [
+    "pandas-stubs>=2.3.3.260113",
+]
 dev = ["deptry", "ruff", "ty", "numpydoc"]
 
 

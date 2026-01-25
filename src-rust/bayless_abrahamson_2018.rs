@@ -140,7 +140,7 @@ pub fn bayless_abrahamson_2018_eas(sites: &[SiteProperties]) -> Array2<f64> {
     let n_frequencies = FREQUENCIES.len();
     let mut out = Array2::default((n_stations, n_frequencies));
     sites
-        .par_iter()
+        .iter()
         .zip(out.axis_iter_mut(Axis(0)))
         .for_each(|(site, out_amp)| bayless_abrahamson_2018_eas_one(site, out_amp));
     out
@@ -149,7 +149,6 @@ pub fn bayless_abrahamson_2018_eas(sites: &[SiteProperties]) -> Array2<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::assert_amplification_approx_eq;
     use approx::assert_abs_diff_eq;
     use std::error::Error;
     use std::path::PathBuf;
