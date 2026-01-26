@@ -20,8 +20,7 @@
 use crate::campbell_bozorgnia_2014_coefficients::{C11, FREQUENCIES, K1, K2};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
-use ndarray::{s, Zip};
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use ndarray::Zip;
 
 /// Constants for the CB14 (Campbell & Bozorgnia, 2014) model.
 struct CB14Constants {
@@ -160,7 +159,8 @@ mod tests {
                 let expected_sf = expected_sf_str.parse()?;
                 expected_site_factors.push(expected_sf)
             }
-            let calculated_site_factors_array = campbell_bozorgnia_2014_one(&site_properties);
+            let mut calculated_site_factors_array = Array1::default(FREQUENCIES.len());
+            campbell_bozorgnia_2014_one(&site_properties, calculated_site_factors_array.view_mut());
             let expected_site_factors_array = Array1::from_vec(expected_site_factors);
             let calculated_slice = calculated_site_factors_array.slice(s![..-1]);
             let ctxt = format!("Site properties = {:?}", site_properties);

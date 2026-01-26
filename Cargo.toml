@@ -19,11 +19,15 @@ rayon = "1.11.0"
 [dev-dependencies]
 ndarray = { version = "0.17.1", features = ["rayon", "approx"] }
 approx = "0.5.1"
-criterion = { version = "0.8.1", features = ["html_reports"] }
 csv = "1.4.0"
 serde = { version = "1.0.228", features = ["serde_derive"] }
-
+criterion = { version = "0.8.1", features = ["html_reports"] }
 
 [build-dependencies]
 csv = "1.4.0"
 serde = { version = "1.0.228", features = ["serde_derive"] }
+
+
+[[bench]]
+name = "benchmark"
+harness = false

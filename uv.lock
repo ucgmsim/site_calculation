@@ -790,9 +790,9 @@ types = [
 requires-dist = [
     { name = "deptry", marker = "extra == 'dev'" },
     { name = "hypothesis", extras = ["numpy"], marker = "extra == 'test'", specifier = ">=6.151.0" },
-    { name = "numpy", specifier = ">=2.4.1" },
+    { name = "numpy", specifier = ">=2" },
     { name = "numpydoc", marker = "extra == 'dev'" },
-    { name = "pandas", specifier = ">=3.0.0" },
+    { name = "pandas", specifier = ">=2" },
     { name = "pandas-stubs", marker = "extra == 'types'", specifier = ">=2.3.3.260113" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.2" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=7.0.0" },

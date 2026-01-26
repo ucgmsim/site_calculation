@@ -1,9 +1,9 @@
 mod amp_bandpass;
-mod bayless_abrahamson_2018;
+pub mod bayless_abrahamson_2018;
 mod bayless_abrahamson_2018_coefficients;
-mod campbell_bozorgnia_2014;
+pub mod campbell_bozorgnia_2014;
 mod campbell_bozorgnia_2014_coefficients;
-mod site;
+pub mod site;
 mod tests;
 
 use pyo3::prelude::*;
