@@ -1,4 +1,3 @@
-mod amp_bandpass;
 pub mod bayless_abrahamson_2018;
 mod bayless_abrahamson_2018_coefficients;
 pub mod campbell_bozorgnia_2014;
