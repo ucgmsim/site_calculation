@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
+import scipy as sp
 
 from site_calculation import _utils  # type: ignore[unresolved-import]
 
 AmplificationArray = np.ndarray[tuple[int, int], np.dtype[np.float64]]
+FrequencyArray = np.ndarray[tuple[int,], np.dtype[np.float64]]
+Filter = np.ndarray[tuple[int,], np.dtype[np.float64]]
 
 REQUIRED_COLUMNS = {"vs30", "vs30_sim", "pga"}
 
@@ -115,3 +118,123 @@ def bayless_abrahamson_2018(sites: pd.DataFrame) -> AmplificationArray:
     return _utils._bayless_abrahamson_2018_eas(
         sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
     )
+
+
+def interpolate_frequencies(
+    model_frequencies: FrequencyArray,
+    output_frequencies: FrequencyArray,
+    amplification_array: AmplificationArray,
+) -> AmplificationArray:
+    """Interpolate frequencies into another frequency space.
+
+    Parameters
+    ----------
+    model_frequencies : FrequencyArray
+        The input model frequencies.
+    output_frequencies : FrequencyArray
+        The output frequencies, e.g. FFT output frequencies.
+    amplification_array : AmplificationArray
+        The amplification array. Interpolation occurs over the last
+        axis.
+
+    Returns
+    -------
+    AmplificationArray
+        The amplification array interpolated from the model
+        frequencies into the output frequencies. The frequencies are
+        interpolated in log-space.
+    """
+    interpolator = sp.interpolate.make_interp_spline(
+        np.log(model_frequencies), amplification_array, k=1, axis=-1
+    )
+    return interpolator(np.log(output_frequencies))
+
+
+def amp_lowpass(
+    fftfreq: FrequencyArray, ampf: AmplificationArray, fmin: float, fmidbot: float
+) -> None:
+    """Lowpass filter site amplification.
+
+    Modifies ``ampf`` array in place setting all amplification below
+    ``fmin`` to be ``1.0``, and does not change amplification after
+    ``fmidbot``. Between ``fmin`` and ``fmidbot`` the amplification
+    array ``ampf`` is introduced logarithmically. This is part of the
+    original broadband ground-motion approach described in _[0] and
+    modified according to _[1].
+
+    Parameters
+    ----------
+    fftfreq : FrequencyArray
+        Array of frequencies to filter.
+    ampf : AmplificationArray
+        Array of amplification values.
+    fmin : float
+        Minimum frequency for amplification.
+    fmidbot : float
+        Maximum frequency for filter.
+
+    References
+    ----------
+    [0] Graves, R. W., & Pitarka, A. (2010). Broadband ground-motion
+    simulation using a hybrid approach. Bulletin of the Seismological
+    Society of America, 100(5A), 2095-2123.
+    [1] Lee, R. L., Bradley, B. A., Stafford, P. J., Graves, R. W., &
+    Rodriguez-Marek, A. (2022). Hybrid broadband ground-motion
+    simulation validation of small magnitude active shallow crustal
+    earthquakes in New Zealand. Earthquake Spectra, 38(4), 2548-2579.
+
+    See Also
+    --------
+    amp_highpass : Highpass filter site amplification.
+    """
+    ampf[:, fftfreq < fmin] = 1.0
+    log_fmin_diff = (np.log(fftfreq) - np.log(fmin)) / (np.log(fmidbot) - np.log(fmin))
+    low_frequency_taper_mask = (fftfreq >= fmin) & (fftfreq < fmidbot)
+    np.multiply(ampf, log_fmin_diff, out=ampf, where=low_frequency_taper_mask)
+    np.add(ampf, 1 - log_fmin_diff, out=ampf, where=low_frequency_taper_mask)
+
+
+def amp_highpass(
+    fftfreq: FrequencyArray, ampf: AmplificationArray, fhightop: float, fmax: float
+) -> None:
+    """Lowpass filter site amplification.
+
+    Modifies ``ampf`` array in place setting all amplification above
+    ``fmax`` to be ``1.0``, and does not change amplification below
+    ``fhightop``. Between ``fhightop`` and ``fmax`` the amplification
+    array ``ampf`` is reduced logarithmically. This is part of the
+    original broadband ground-motion approach described in _[0] and
+    modified according to _[1].
+
+    Parameters
+    ----------
+    fftfreq : FrequencyArray
+        Array of frequencies to filter.
+    ampf : AmplificationArray
+        Array of amplification values.
+    fhightop : float
+        Minimum frequency for filter.
+    fmax : float
+        Maximum frequency for amplification.
+
+    References
+    ----------
+    [0] Graves, R. W., & Pitarka, A. (2010). Broadband ground-motion
+    simulation using a hybrid approach. Bulletin of the Seismological
+    Society of America, 100(5A), 2095-2123.
+    [1] Lee, R. L., Bradley, B. A., Stafford, P. J., Graves, R. W., &
+    Rodriguez-Marek, A. (2022). Hybrid broadband ground-motion
+    simulation validation of small magnitude active shallow crustal
+    earthquakes in New Zealand. Earthquake Spectra, 38(4), 2548-2579.
+
+    See Also
+    --------
+    amp_lowpass : Lowpass filter site amplification.
+    """
+    ampf[:, fftfreq >= fmax] = 1.0
+    high_fmin_diff = (np.log(fftfreq) - np.log(fhightop)) / (
+        np.log(fmax) - np.log(fhightop)
+    )
+    high_frequency_taper_mask = (fhightop <= fftfreq) & (fftfreq < fmax)
+    np.multiply(ampf, 1 - high_fmin_diff, out=ampf, where=high_frequency_taper_mask)
+    np.add(ampf, high_fmin_diff, out=ampf, where=high_frequency_taper_mask)
