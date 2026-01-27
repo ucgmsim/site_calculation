@@ -17,7 +17,7 @@
 use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use ndarray::ArrayView1;
 use std::f64::consts::PI;
 
 /// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
@@ -27,6 +27,7 @@ struct BA18Constants {
     pub f_kappa_transition: f64, // Frequency for kappa extrapolation (24 Hz)
     pub ref_c8_idx: usize,       // Index for c8 at kappa extrapolation frequency
     pub ir_ref_c8_idx: usize,    // Index for c8 at 5Hz (Intensity Reference)
+    pub ir_ref_vs: f64,
 }
 
 const CONSTANTS: BA18Constants = BA18Constants {
@@ -34,7 +35,8 @@ const CONSTANTS: BA18Constants = BA18Constants {
     v_ref: 760.0,
     f_kappa_transition: 24.0,
     ref_c8_idx: 238,
-    ir_ref_c8_idx: 170, // Corresponds to 5Hz for Ir calculation
+    ir_ref_c8_idx: 170,       // Corresponds to 5Hz for Ir calculation
+    ir_ref_vs: 1.14234980557, // calc_f_sl_exponent(CONSTANTS.v_ref, c8_5hz);
 };
 
 /// Finds the minimum nonlinear site factor across the spectrum to enforce
@@ -66,11 +68,10 @@ fn calc_kappa(vs30: f64) -> f64 {
 
 /// Computes the linear site factor, applying Kappa-based extrapolation
 /// if freq > 24 Hz.
-fn calc_linear_site_factor_with_kappa(vs30: f64, c8: f64, freq: f64) -> f64 {
+fn calc_linear_site_factor_with_kappa(vs30: f64, c8: f64, kappa: f64, freq: f64) -> f64 {
     if freq < CONSTANTS.f_kappa_transition {
         calc_f_sl_exponent(vs30, c8)
     } else {
-        let kappa = calc_kappa(vs30);
         let linear_term_ref = calc_f_sl_exponent(vs30, C8[CONSTANTS.ref_c8_idx]);
         let df = freq - CONSTANTS.f_kappa_transition;
 
@@ -95,21 +96,31 @@ fn calc_f2(vs30: f64, v_ref: f64, f4: f64, f5: f64) -> f64 {
 
 /// Primary function to calculate the total site amplification factor f_s.
 /// Combines linear site response (f_sl) and nonlinear soil effects (f_nl).
-pub fn calc_f_s(site: &SiteProperties, ir: f64, f_min: f64, f_nl_min: f64, idx: usize) -> f64 {
+pub fn calc_f_s(
+    site: &SiteProperties,
+    ir: f64,
+    f_min: f64,
+    f_nl_min: f64,
+    kappa: f64,
+    kappa_sim: f64,
+    idx: usize,
+) -> f64 {
     let c8 = C8[idx];
     let freq = FREQUENCIES[idx];
 
     // Linear amplification ratio relative to simulation velocity
-    let f_sl_vs = calc_linear_site_factor_with_kappa(site.vs30, c8, freq);
-    let f_sl_sim = calc_linear_site_factor_with_kappa(site.vs30_sim, c8, freq);
+    let f_sl_vs = calc_linear_site_factor_with_kappa(site.vs30, c8, kappa, freq);
+    let f_sl_sim = calc_linear_site_factor_with_kappa(site.vs30_sim, c8, kappa_sim, freq);
     let linear_ratio = f_sl_vs / f_sl_sim;
 
-    // Get non-linear term f_nl
-    let f2 = calc_f2(site.vs30, CONSTANTS.v_ref, F4[idx], F5[idx]);
-    let current_f_nl = calc_f_nl_exponent(ir, f2, F3[idx]);
-
     // Apply the floor to the nonlinear term
-    let f_nl = if freq < f_min { current_f_nl } else { f_nl_min };
+    let f_nl = if freq < f_min {
+        // Get non-linear term f_nl
+        let f2 = calc_f2(site.vs30, CONSTANTS.v_ref, F4[idx], F5[idx]);
+        calc_f_nl_exponent(ir, f2, F3[idx])
+    } else {
+        f_nl_min
+    };
 
     linear_ratio * f_nl
 }
@@ -117,12 +128,11 @@ pub fn calc_f_s(site: &SiteProperties, ir: f64, f_min: f64, f_nl_min: f64, idx: 
 fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     // Calculate induced intensity (Ir) based on Equation 10e
     let c8_5hz = C8[CONSTANTS.ir_ref_c8_idx];
-    let ir_ref_vs = calc_f_sl_exponent(CONSTANTS.v_ref, c8_5hz);
     let ir_sim = calc_f_sl_exponent(site.vs30_sim, c8_5hz);
     // This IR calculation is derived in the e-Supp to Kuncar et al. 2025
     // Equation B.2 of
     // https://journals.sagepub.com/doi/suppl/10.1177/87552930241301059/suppl_file/sj-pdf-1-eqs-10.1177_87552930241301059.pdf
-    let ir = site.pga * (ir_ref_vs / ir_sim).powf(0.846);
+    let ir = site.pga * (CONSTANTS.ir_ref_vs / ir_sim).powf(0.846);
     let (f_min, f_nl_min) = calc_min_f_nl(ir, site.vs30, CONSTANTS.v_ref);
     (ir, f_min, f_nl_min)
 }
@@ -130,9 +140,11 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
 fn bayless_abrahamson_2018_eas_one(site: &SiteProperties, mut out: ArrayViewMut1<f64>) {
     // This is calculated once because it is independent of frequency.
     let (ir, f_min, f_nl_min) = calc_nl_ir_parameters(site);
+    let kappa = calc_kappa(site.vs30);
+    let kappa_sim = calc_kappa(site.vs30_sim);
     (0..FREQUENCIES.len())
         .zip(out.iter_mut())
-        .for_each(|(idx, out)| *out = calc_f_s(site, ir, f_min, f_nl_min, idx));
+        .for_each(|(idx, out)| *out = calc_f_s(site, ir, f_min, f_nl_min, kappa, kappa_sim, idx));
 }
 
 pub fn bayless_abrahamson_2018_eas(sites: &[SiteProperties]) -> Array2<f64> {
@@ -174,8 +186,9 @@ mod tests {
         let c8 = C8[idx];
         let f = FREQUENCIES[idx];
         let vs30 = 650.0;
+        let kappa = calc_kappa(vs30);
         assert_abs_diff_eq!(
-            calc_linear_site_factor_with_kappa(vs30, c8, f),
+            calc_linear_site_factor_with_kappa(vs30, c8, kappa, f),
             1.574327,
             epsilon = 1e-6
         )
@@ -187,8 +200,9 @@ mod tests {
         let c8 = C8[idx];
         let f = FREQUENCIES[idx];
         let vs30 = 650.0;
+        let kappa = calc_kappa(vs30);
         assert_abs_diff_eq!(
-            calc_linear_site_factor_with_kappa(vs30, c8, f),
+            calc_linear_site_factor_with_kappa(vs30, c8, kappa, f),
             0.494244,
             epsilon = 1e-6
         )
@@ -235,8 +249,10 @@ mod tests {
             pga: 0.46,
         };
         let (ir, f_min, f_nl_min) = calc_nl_ir_parameters(&site_properties);
-        let sf = calc_f_s(&site_properties, ir, f_min, f_nl_min, 0);
-        let sf_high = calc_f_s(&site_properties, ir, f_min, f_nl_min, 67);
+        let kappa = calc_kappa(site_properties.vs30);
+        let kappa_sim = calc_kappa(site_properties.vs30_sim);
+        let sf = calc_f_s(&site_properties, ir, f_min, f_nl_min, kappa, kappa_sim, 0);
+        let sf_high = calc_f_s(&site_properties, ir, f_min, f_nl_min, kappa, kappa_sim, 67);
         assert_abs_diff_eq!(sf, 0.822837, epsilon = 1e-5);
         assert_abs_diff_eq!(sf_high, 0.74334, epsilon = 1e-5);
     }
