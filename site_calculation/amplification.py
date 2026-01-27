@@ -1,5 +1,6 @@
 """Amplification models for simulated sites."""
 
+import contextlib
 import multiprocessing
 import typing
 from typing import TYPE_CHECKING, Any
@@ -9,6 +10,7 @@ import pandas as pd
 import pyfftw.config as _pyfftw_config
 import pyfftw.interfaces.numpy_fft as pyfftw_fft
 import scipy as sp
+from numpy.random import Generator
 
 from site_calculation import _utils  # type: ignore[unresolved-import]
 
@@ -78,9 +80,13 @@ def campbell_bozorgnia_2014(sites: pd.DataFrame) -> AmplificationArray:
         missing_columns = sorted(column_diff)
         raise ValueError(f"Required columns missing: {', '.join(missing_columns)}.")
 
-    return _utils._campbell_bozorgnia_2014(
-        sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
-    )
+    try:
+        return _utils._campbell_bozorgnia_2014(
+            sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
+        )
+    except TypeError as e:
+        e.add_note("All columns in dataframe must have float64 dtype.")
+        raise
 
 
 def bayless_abrahamson_2018(sites: pd.DataFrame) -> AmplificationArray:
@@ -129,16 +135,53 @@ def bayless_abrahamson_2018(sites: pd.DataFrame) -> AmplificationArray:
         missing_columns = sorted(column_diff)
         raise ValueError(f"Required columns missing: {', '.join(missing_columns)}.")
 
-    return _utils._bayless_abrahamson_2018_eas(
-        sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
-    )
+    try:
+        return _utils._bayless_abrahamson_2018_eas(
+            sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
+        )
+    except TypeError as e:
+        e.add_note("All columns in dataframe must have float64 dtype.")
+        raise
+
+
+@contextlib.contextmanager
+def _pyfftw_cores(cores: int) -> Generator[None, None, None]:
+    old_cores = pyfftw_config.NUM_THREADS
+    pyfftw_config.NUM_THREADS = cores
+    try:
+        yield
+    finally:
+        pyfftw_config.NUM_THREADS = old_cores
+
+
+def taper(waveform: WaveformArray, taper_percent: float) -> None:
+    """Taper the end of a waveform using the Hanning method.
+
+    Parameters
+    ----------
+    waveform : WaveformArray
+        The input waveform.
+    taper_percent : float
+        The taper percentage. The last ``taper_percent * nt`` values
+        should taper to 0.0.
+
+    See Also
+    --------
+    np.hanning : The hanning taper used.
+    """
+    nt = waveform.shape[-1]
+    ntap = int(nt * taper_percent)
+    if ntap > 0:
+        # Create a Hanning window for the taper, ensuring it's float32
+        hanning_window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(waveform.dtype)
+        # Create a copy of the original waveform so-as not to modify it in-place.
+        waveform[..., nt - ntap :] *= hanning_window
 
 
 def amplify_waveform(
     waveform: WaveformArray,
     amplification_factor: AmplificationArray,
     cores: int = multiprocessing.cpu_count(),
-    taper: bool = True,
 ) -> np.ndarray:
     """Apply amplification factor to waveforms.
 
@@ -154,9 +197,6 @@ def amplify_waveform(
         The number of cores to use for FFT. Defaults to all cores
         available on the system as reported by
         `muliprocessing.cpu_count()`.
-    taper : bool, optional
-        If true, taper the waveform to avoid spectral leakage. Default
-        True.
 
     Returns
     -------
@@ -164,39 +204,17 @@ def amplify_waveform(
         The input waveform (de)amplified at frequencies according to
         the values of `amplification_factor`.
     """
-    # Saved for later to reset after inverse Fourier.
-    old_fftw_num_threads = pyfftw_config.NUM_THREADS
-    pyfftw_config.NUM_THREADS = cores
-
     nt = waveform.shape[-1]
-    waveform_dtype = waveform.dtype
-
-    # Taper 5% on the right using the Hanning method
-    ntap = int(nt * 0.05)
-
-    if ntap > 0 and taper:
-        # Create a Hanning window for the taper, ensuring it's float32
-        hanning_window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(waveform_dtype)
-        # Create a copy of the original waveform so-as not to modify it in-place.
-        waveform = waveform.copy()
-        waveform[..., nt - ntap :] *= hanning_window
 
     n_fft = 2 * amplification_factor.shape[-1]
 
-    # NOTE: The old code had the following resizing behaviour
-    # timeseries = np.resize(timeseries, ft_len)
-    # timeseries[nt:] = 0
-    # this is actually unnecessary as setting `n=n_fft` will automatically do the same thing
-    # See: https://numpy.org/doc/stable/reference/generated/numpy.fft.rfft.html
-    # and the PYFFTW equivalent:
-    # https://pyfftw.readthedocs.io/en/latest/source/pyfftw/interfaces/numpy_fft.html#pyfftw.interfaces.numpy_fft.rfft
+    with _pyfftw_cores(cores):
+        fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
 
-    fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
+        fourier[..., 1:] *= amplification_factor.astype(waveform.dtype)
 
-    fourier[..., :-1] *= amplification_factor.astype(waveform.dtype)
+        result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
 
-    result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
-    pyfftw_config.NUM_THREADS = old_fftw_num_threads
     # Trim to original length
     return result_full[..., :nt]
 
