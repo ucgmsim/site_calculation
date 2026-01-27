@@ -44,11 +44,11 @@ fn ba18_model_coefficients() {
     // 3. Generate the Rust code
     let generated_code = format!(
         r#"
-pub const FREQUENCIES: [f64; {}] = {:?};
-pub const F3: [f64; {}] = {:?};
-pub const F4: [f64; {}] = {:?};
-pub const F5: [f64; {}] = {:?};
-pub const C8: [f64; {}] = {:?};
+pub static FREQUENCIES: [f64; {}] = {:?};
+pub static F3: [f64; {}] = {:?};
+pub static F4: [f64; {}] = {:?};
+pub static F5: [f64; {}] = {:?};
+pub static C8: [f64; {}] = {:?};
 "#,
         frequencies.len(),
         frequencies,
@@ -91,10 +91,10 @@ fn cb14_model_coefficients() {
     // 3. Generate the Rust code
     let generated_code = format!(
         r#"
-pub const FREQUENCIES: [f64; {}] = {:?};
-pub const C11: [f64; {}] = {:?};
-pub const K1: [f64; {}] = {:?};
-pub const K2: [f64; {}] = {:?};
+pub static FREQUENCIES: [f64; {}] = {:?};
+pub static C11: [f64; {}] = {:?};
+pub static K1: [f64; {}] = {:?};
+pub static K2: [f64; {}] = {:?};
 "#,
         frequencies.len(),
         frequencies,
