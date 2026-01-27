@@ -1,14 +1,21 @@
 """Amplification models for simulated sites."""
 
 import multiprocessing
+import typing
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
-import pyfftw
+import pyfftw.config as _pyfftw_config
 import pyfftw.interfaces.numpy_fft as pyfftw_fft
 import scipy as sp
 
 from site_calculation import _utils  # type: ignore[unresolved-import]
+
+if TYPE_CHECKING:
+    pyfftw_config = typing.cast(Any, _pyfftw_config)
+else:
+    pyfftw_config = _pyfftw_config
 
 AmplificationArray = np.ndarray[tuple[int, int], np.dtype[np.float64]]
 WaveformArray = np.ndarray[tuple[int, int], np.dtype[np.float32]]
@@ -158,8 +165,8 @@ def amplify_waveform(
         the values of `amplification_factor`.
     """
     # Saved for later to reset after inverse Fourier.
-    old_fftw_num_threads = pyfftw.config.NUM_THREADS
-    pyfftw.config.NUM_THREADS = cores
+    old_fftw_num_threads = pyfftw_config.NUM_THREADS
+    pyfftw_config.NUM_THREADS = cores
 
     nt = waveform.shape[-1]
     waveform_dtype = waveform.dtype
@@ -189,7 +196,7 @@ def amplify_waveform(
     fourier[..., :-1] *= amplification_factor.astype(waveform.dtype)
 
     result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
-    pyfftw.config.NUM_THREADS = old_fftw_num_threads
+    pyfftw_config.NUM_THREADS = old_fftw_num_threads
     # Trim to original length
     return result_full[..., :nt]
 
