@@ -211,7 +211,7 @@ def amplify_waveform(
     with _pyfftw_cores(cores):
         fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
 
-        fourier[..., 1:] *= amplification_factor.astype(waveform.dtype)
+        fourier *= amplification_factor.astype(waveform.dtype)
 
         result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
 
