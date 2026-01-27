@@ -7,6 +7,12 @@ AmplificationArray = np.ndarray[tuple[int, int], np.dtype[np.float64]]
 
 REQUIRED_COLUMNS = {"vs30", "vs30_sim", "pga"}
 
+CAMPBELL_BOZORGNIA_2014_FREQUENCIES: FrequencyArray = (
+    _utils._campbell_bozorgnia_2014_frequencies()
+)
+BAYLESS_ABRAHAMSON_2018_FREQUENCIES: FrequencyArray = (
+    _utils._bayless_abrahamson_2018_frequencies()
+)
 
 def campbell_bozorgnia_2014(sites: pd.DataFrame) -> AmplificationArray:
     column_diff = REQUIRED_COLUMNS - set(sites.columns)
