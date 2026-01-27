@@ -1,3 +1,5 @@
+"""Amplification models for simulated sites."""
+
 import multiprocessing
 
 import numpy as np
