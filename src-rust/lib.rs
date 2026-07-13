@@ -16,7 +16,7 @@ mod _utils {
     use crate::site::SiteProperties;
 
     use itertools::izip;
-    use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
+    use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, ToPyArray};
     use pyo3::prelude::*;
 
     fn collect_site_properties(
