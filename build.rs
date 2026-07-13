@@ -78,10 +78,10 @@ fn cb14_model_coefficients() {
     let mut k1 = Vec::new();
     let mut k2 = Vec::new();
     for result in rdr
-        .expect("Could not open ba18_coefficients.csv for reading")
+        .expect("Could not open cb14_coefficients.csv for reading")
         .deserialize()
     {
-        let record: CB14Record = result.expect("Could not read ba18 coefficient table");
+        let record: CB14Record = result.expect("Could not read cb14 coefficient table");
         frequencies.push(record.frequency);
         c11.push(record.c11);
         k1.push(record.k1);

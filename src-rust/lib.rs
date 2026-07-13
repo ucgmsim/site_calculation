@@ -24,9 +24,9 @@ mod _utils {
         vs30_sim_py: PyReadonlyArray1<f64>,
         pga_py: PyReadonlyArray1<f64>,
     ) -> Vec<SiteProperties> {
-        let vs30 = vs30_py.as_slice().unwrap();
-        let vs30_sim = vs30_sim_py.as_slice().unwrap();
-        let pga = pga_py.as_slice().unwrap();
+        let vs30 = vs30_py.as_slice().expect("Vs30 must be contiguous");
+        let vs30_sim = vs30_sim_py.as_slice().expect("Vs30 sim must be contiguous");
+        let pga = pga_py.as_slice().expect("PGA must be contiguous");
         izip!(vs30, vs30_sim, pga)
             .map(|(&vs30_one, &vs30_sim_one, &pga_one)| SiteProperties {
                 vs30: vs30_one,

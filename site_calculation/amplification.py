@@ -76,7 +76,11 @@ def campbell_bozorgnia_2014(
     """
 
     try:
-        return _utils._campbell_bozorgnia_2014(vs30, vs30_sim, pga)
+        return _utils._campbell_bozorgnia_2014(
+            np.ascontiguousarray(vs30),
+            np.ascontiguousarray(vs30_sim),
+            np.ascontiguousarray(pga),
+        )
     except TypeError as e:
         e.add_note("All arrays must have float64 dtype.")
         raise
@@ -126,7 +130,11 @@ def bayless_abrahamson_2018(
     """
 
     try:
-        return _utils._bayless_abrahamson_2018_eas(vs30, vs30_sim, pga)
+        return _utils._bayless_abrahamson_2018_eas(
+            np.ascontiguousarray(vs30),
+            np.ascontiguousarray(vs30_sim),
+            np.ascontiguousarray(pga),
+        )
     except TypeError as e:
         e.add_note("All arrays must have float64 dtype.")
         raise
