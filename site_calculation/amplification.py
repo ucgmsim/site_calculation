@@ -3,14 +3,15 @@
 import contextlib
 import multiprocessing
 import typing
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+import pyfftw
 import pyfftw.config as _pyfftw_config
 import pyfftw.interfaces.numpy_fft as pyfftw_fft
 import scipy as sp
-from numpy.random import Generator
 
 from site_calculation import _utils  # type: ignore[unresolved-import]
 
@@ -22,7 +23,9 @@ else:
 AmplificationArray = np.ndarray[tuple[int, int], np.dtype[np.float64]]
 WaveformArray = np.ndarray[tuple[int, int], np.dtype[np.float32]]
 FrequencyArray = np.ndarray[tuple[int,], np.dtype[np.float64]]
-Filter = np.ndarray[tuple[int,], np.dtype[np.float64]]
+ValueArray = np.ndarray[tuple[int,], np.dtype[np.float64]]
+Filter = ValueArray
+
 
 REQUIRED_COLUMNS = {"vs30", "vs30_sim", "pga"}
 
@@ -34,19 +37,21 @@ BAYLESS_ABRAHAMSON_2018_FREQUENCIES: FrequencyArray = (
 )
 
 
-def campbell_bozorgnia_2014(sites: pd.DataFrame) -> AmplificationArray:
+def campbell_bozorgnia_2014(
+    vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
+) -> AmplificationArray:
     """Site amplification factor based on the Campbell and Bozorgnia
     2014 spectral acceleration ground motion model [0] with
     modifications[1].
 
     Parameters
     ----------
-    sites : pd.DataFrame
-        DataFrame of sites to calculate amplification factors for.
-        Must contain all columns in `REQUIRED_COLUMNS`, at least
-        ``vs30`` (vs30 of the site), ``vs30_sim`` (vs30 of the
-        simulation, typically 500 m/s), and ``pga`` (peak ground
-        acceleration from the simulation).
+    vs30 : ValueArray
+        Vs30 values for station, the target for site amplification.
+    vs30_sim : ValueArray
+        Vs30 values in simulation.
+    pga : ValueArray
+        Peak ground acceleration measured in un-amplified array.
 
     Returns
     -------
@@ -74,34 +79,29 @@ def campbell_bozorgnia_2014(sites: pd.DataFrame) -> AmplificationArray:
     broadband ground-motion simulations. Earthquake Spectra.
     2025;41(2):1272-1313.
     """
-    column_diff = REQUIRED_COLUMNS - set(sites.columns)
-
-    if column_diff:
-        missing_columns = sorted(column_diff)
-        raise ValueError(f"Required columns missing: {', '.join(missing_columns)}.")
 
     try:
-        return _utils._campbell_bozorgnia_2014(
-            sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
-        )
+        return _utils._campbell_bozorgnia_2014(vs30, vs30_sim, pga)
     except TypeError as e:
-        e.add_note("All columns in dataframe must have float64 dtype.")
+        e.add_note("All arrays must have float64 dtype.")
         raise
 
 
-def bayless_abrahamson_2018(sites: pd.DataFrame) -> AmplificationArray:
+def bayless_abrahamson_2018(
+    vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
+) -> AmplificationArray:
     """Site amplification factor based on the Bayless and Abrahamson
     2018 effective amplitude spectra ground motion model [0] with
     modifications[1].
 
     Parameters
     ----------
-    sites : pd.DataFrame
-        DataFrame of sites to calculate amplification factors for.
-        Must contain all columns in `REQUIRED_COLUMNS`, at least
-        ``vs30`` (vs30 of the site), ``vs30_sim`` (vs30 of the
-        simulation, typically 500 m/s), and ``pga`` (peak ground
-        acceleration from the simulation).
+    vs30 : ValueArray
+        Vs30 values for station, the target for site amplification.
+    vs30_sim : ValueArray
+        Vs30 values in simulation.
+    pga : ValueArray
+        Peak ground acceleration measured in un-amplified array.
 
     Returns
     -------
@@ -129,19 +129,8 @@ def bayless_abrahamson_2018(sites: pd.DataFrame) -> AmplificationArray:
     broadband ground-motion simulations. Earthquake Spectra.
     2025;41(2):1272-1313.
     """
-    column_diff = REQUIRED_COLUMNS - set(sites.columns)
 
-    if column_diff:
-        missing_columns = sorted(column_diff)
-        raise ValueError(f"Required columns missing: {', '.join(missing_columns)}.")
-
-    try:
-        return _utils._bayless_abrahamson_2018_eas(
-            sites["vs30"].values, sites["vs30_sim"].values, sites["pga"].values
-        )
-    except TypeError as e:
-        e.add_note("All columns in dataframe must have float64 dtype.")
-        raise
+    return _utils._bayless_abrahamson_2018_eas(vs30, vs30_sim, pga)
 
 
 @contextlib.contextmanager
@@ -181,6 +170,7 @@ def taper(waveform: WaveformArray, taper_percent: float) -> None:
 def amplify_waveform(
     waveform: WaveformArray,
     amplification_factor: AmplificationArray,
+    n_fft: int,
     cores: int = multiprocessing.cpu_count(),
 ) -> np.ndarray:
     """Apply amplification factor to waveforms.
@@ -193,6 +183,8 @@ def amplify_waveform(
         The frequency amplification factors. If `waveform` has
         length `2^i`, then `amplification_factor` should have length `2^(ceil(i) -
         1)`.
+    n_fft : int
+        The FFT length to pad out to.
     cores : int, optional
         The number of cores to use for FFT. Defaults to all cores
         available on the system as reported by
@@ -205,8 +197,6 @@ def amplify_waveform(
         the values of `amplification_factor`.
     """
     nt = waveform.shape[-1]
-
-    n_fft = 2 * amplification_factor.shape[-1]
 
     with _pyfftw_cores(cores):
         fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
