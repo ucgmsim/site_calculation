@@ -204,6 +204,10 @@ def amplify_waveform(
         the values of `amplification_factor`.
     """
     nt = waveform.shape[-1]
+    if n_fft <= 0:
+        raise ValueError("n_fft must be a positive integer.")
+    if n_fft < nt:
+        raise ValueError("n_fft must be >= waveform length.")
     if amplification_factor.shape[-1] != n_fft // 2 + 1:
         raise ValueError(
             "amplification_factor must have n_fft // 2 + 1 frequency values."

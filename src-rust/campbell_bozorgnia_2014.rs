@@ -72,7 +72,7 @@ fn fs_mid_high(vs30: f64, c11: f64, k1: f64, k2: f64) -> f64 {
 /// Helper to select the appropriate branch of the site response model based on Vs30.
 /// Selection logic defined in Equation (18).
 fn compute_fs_value(vs30: f64, a1100: f64, c11: f64, k1: f64, k2: f64) -> f64 {
-    if vs30 < k1 {
+    if vs30 <= k1 {
         fs_low(vs30, a1100, c11, k1, k2)
     } else {
         fs_mid_high(vs30, c11, k1, k2)

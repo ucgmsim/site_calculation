@@ -9,17 +9,20 @@ description = "Site calculation models, including source-site distances and ampl
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["version"]
-dependencies = ["numpy>=2", "pandas>=2", "pyfftw>=0.15.1", "scipy>=1.17.0"]
+dependencies = ["numpy>=2", "pyfftw>=0.15.1", "scipy>=1.17.0"]
 
 [tool.setuptools_scm]
 
 [project.optional-dependencies]
 test = ["hypothesis[numpy]>=6.151.0", "pytest>=9.0.2", "pytest-cov>=7.0.0"]
-types = ["pandas-stubs>=2.3.3.260113"]
+types = []
 
 [dependency-groups]
 dev = ["deptry", "ruff", "ty", "numpydoc"]
 
+
+[tool.deptry]
+optional_dependencies_dev_groups = ["test", "types"]
 
 [tool.pytest]
 markers = ["slow: mark a test as slow"]

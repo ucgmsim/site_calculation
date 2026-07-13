@@ -127,9 +127,7 @@ pub fn calc_f_s(
 fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     // Calculate induced intensity (Ir) based on Equation 10e
     debug_assert!((FREQUENCIES[CONSTANTS.ir_ref_c8_idx] - 5.0).abs() < 1e-6);
-    debug_assert!(
-        (FREQUENCIES[CONSTANTS.ref_c8_idx] - CONSTANTS.f_kappa_transition).abs() < 1e-6
-    );
+    debug_assert!((FREQUENCIES[CONSTANTS.ref_c8_idx] - CONSTANTS.f_kappa_transition).abs() < 1e-6);
 
     let c8_5hz = C8[CONSTANTS.ir_ref_c8_idx];
     let ir_sim = calc_f_sl_exponent(site.vs30_sim, c8_5hz);
@@ -227,7 +225,7 @@ mod tests {
         let ir = 0.387394736043994;
         let vs30 = 650.0;
         let v_ref = CONSTANTS.v_ref;
-        let idx = 0; // 3.890Hz
+        let idx = 0; // 0.1Hz
         let f3 = F3[idx];
         let f4 = F4[idx];
         let f5 = F5[idx];

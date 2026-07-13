@@ -6,12 +6,42 @@ import pytest
 from site_calculation.amplification import (
     BAYLESS_ABRAHAMSON_2018_FREQUENCIES,
     CAMPBELL_BOZORGNIA_2014_FREQUENCIES,
+    _validate_inputs,
     amp_highpass,
     amp_lowpass,
     amplify_waveform,
     interpolate_frequencies,
     taper,
 )
+
+
+class TestValidateInputs:
+    def test_non_positive_vs30_raises(self) -> None:
+        vs30 = np.array([0.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(ValueError, match="vs30 and vs30_sim must be strictly positive"):
+            _validate_inputs(vs30, vs30_sim, pga)
+
+    def test_non_positive_vs30_sim_raises(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([-1.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(ValueError, match="vs30 and vs30_sim must be strictly positive"):
+            _validate_inputs(vs30, vs30_sim, pga)
+
+    def test_negative_pga_raises(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, -0.05])
+        with pytest.raises(ValueError, match="pga must be non-negative"):
+            _validate_inputs(vs30, vs30_sim, pga)
+
+    def test_valid_inputs_passes(self) -> None:
+        vs30 = np.array([400.0, 760.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.05])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
 
 
 class TestTaper:
@@ -49,6 +79,30 @@ class TestAmplifyWaveform:
         amp = np.ones((1, 10), dtype=np.float64)
         with pytest.raises(ValueError, match="n_fft // 2 \\+ 1"):
             amplify_waveform(waveform, amp, n_fft=256)
+
+    def test_n_fft_non_positive_raises(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError, match="n_fft must be a positive integer"):
+            amplify_waveform(waveform, amp, n_fft=0)
+
+    def test_n_fft_negative_raises(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError, match="n_fft must be a positive integer"):
+            amplify_waveform(waveform, amp, n_fft=-1)
+
+    def test_n_fft_shorter_than_waveform_raises(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 51), dtype=np.float64)
+        with pytest.raises(ValueError, match="n_fft must be >= waveform length"):
+            amplify_waveform(waveform, amp, n_fft=99)
+
+    def test_station_count_mismatch_raises(self) -> None:
+        waveform = np.ones((2, 100), dtype=np.float32)
+        amp = np.ones((3, 65), dtype=np.float64)
+        with pytest.raises(ValueError, match="number of stations"):
+            amplify_waveform(waveform, amp, n_fft=128)
 
     def test_output_shape(self) -> None:
         waveform = np.ones((1, 100), dtype=np.float32)
@@ -106,6 +160,13 @@ class TestInterpolateFrequencies:
         result = interpolate_frequencies(model_freqs, output_freqs, amp)
         assert result.shape == (2, 3)
 
+    def test_last_dim_mismatch_raises(self) -> None:
+        model_freqs = np.array([1.0, 10.0])
+        amp = np.array([[1.0, 2.0, 3.0]])
+        output_freqs = np.array([1.0, 5.0])
+        with pytest.raises(ValueError, match="last dimension"):
+            interpolate_frequencies(model_freqs, output_freqs, amp)
+
 
 class TestAmpLowpass:
     def test_fmin_too_small_raises(self) -> None:
@@ -113,6 +174,18 @@ class TestAmpLowpass:
         ampf = np.ones((1, 3))
         with pytest.raises(ValueError, match="Lowpass requires fmin > 0"):
             amp_lowpass(fftfreq, ampf, fmin=0.0, fmidbot=5.0)
+
+    def test_fmidbot_not_greater_than_fmin_raises(self) -> None:
+        fftfreq = np.array([0.1, 1.0, 10.0])
+        ampf = np.ones((1, 3))
+        with pytest.raises(ValueError, match="Lowpass requires fmidbot > fmin"):
+            amp_lowpass(fftfreq, ampf, fmin=5.0, fmidbot=5.0)
+
+    def test_fmidbot_less_than_fmin_raises(self) -> None:
+        fftfreq = np.array([0.1, 1.0, 10.0])
+        ampf = np.ones((1, 3))
+        with pytest.raises(ValueError, match="Lowpass requires fmidbot > fmin"):
+            amp_lowpass(fftfreq, ampf, fmin=5.0, fmidbot=1.0)
 
     def test_shape_mismatch_raises(self) -> None:
         fftfreq = np.array([0.1, 1.0, 10.0])
@@ -158,6 +231,18 @@ class TestAmpHighpass:
         ampf = np.ones((1, 3))
         with pytest.raises(ValueError, match="Highpass requires fhightop > 0"):
             amp_highpass(fftfreq, ampf, fhightop=0.0, fmax=10.0)
+
+    def test_fmax_not_greater_than_fhightop_raises(self) -> None:
+        fftfreq = np.array([0.1, 1.0, 10.0])
+        ampf = np.ones((1, 3))
+        with pytest.raises(ValueError, match="Highpass requires fmax > fhightop"):
+            amp_highpass(fftfreq, ampf, fhightop=5.0, fmax=5.0)
+
+    def test_fmax_less_than_fhightop_raises(self) -> None:
+        fftfreq = np.array([0.1, 1.0, 10.0])
+        ampf = np.ones((1, 3))
+        with pytest.raises(ValueError, match="Highpass requires fmax > fhightop"):
+            amp_highpass(fftfreq, ampf, fhightop=10.0, fmax=5.0)
 
     def test_shape_mismatch_raises(self) -> None:
         fftfreq = np.array([0.1, 1.0, 10.0])
