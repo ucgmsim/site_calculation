@@ -1,7 +1,11 @@
 pub mod bayless_abrahamson_2018;
-mod bayless_abrahamson_2018_coefficients;
+mod bayless_abrahamson_2018_coefficients {
+    include!(concat!(env!("OUT_DIR"), "/bayless_abrahamson_2018_coefficients.rs"));
+}
 pub mod campbell_bozorgnia_2014;
-mod campbell_bozorgnia_2014_coefficients;
+mod campbell_bozorgnia_2014_coefficients {
+    include!(concat!(env!("OUT_DIR"), "/campbell_bozorgnia_2014_coefficients.rs"));
+}
 pub mod site;
 mod tests;
 

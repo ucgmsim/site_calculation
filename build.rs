@@ -63,7 +63,7 @@ pub static C8: [f64; {}] = {:?};
     );
 
     // 4. Write to the output directory
-    let out_dir = "src-rust";
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = Path::new(&out_dir).join("bayless_abrahamson_2018_coefficients.rs");
     fs::write(dest_path, generated_code).unwrap();
 }
@@ -107,7 +107,7 @@ pub static K2: [f64; {}] = {:?};
     );
 
     // 4. Write to the output directory
-    let out_dir = "src-rust";
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = Path::new(&out_dir).join("campbell_bozorgnia_2014_coefficients.rs");
     fs::write(dest_path, generated_code).unwrap();
 }
