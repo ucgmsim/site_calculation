@@ -17,7 +17,6 @@
 use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
-use ndarray::ArrayView1;
 use std::f64::consts::PI;
 
 /// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
@@ -137,24 +136,23 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     (ir, f_min, f_nl_min)
 }
 
-fn bayless_abrahamson_2018_eas_one(site: &SiteProperties, mut out: ArrayViewMut1<f64>) {
+fn bayless_abrahamson_2018_eas_one(site: &SiteProperties, out: ArrayViewMut1<f64>) {
     // This is calculated once because it is independent of frequency.
     let (ir, f_min, f_nl_min) = calc_nl_ir_parameters(site);
     let kappa = calc_kappa(site.vs30);
     let kappa_sim = calc_kappa(site.vs30_sim);
-    (0..FREQUENCIES.len())
-        .zip(out.iter_mut())
-        .for_each(|(idx, out)| *out = calc_f_s(site, ir, f_min, f_nl_min, kappa, kappa_sim, idx));
+    azip!((index idx, out in out) {
+        *out = calc_f_s(site, ir, f_min, f_nl_min, kappa, kappa_sim, idx)
+    });
 }
 
 pub fn bayless_abrahamson_2018_eas(sites: &[SiteProperties]) -> Array2<f64> {
     let n_stations = sites.len();
     let n_frequencies = FREQUENCIES.len();
     let mut out = Array2::default((n_stations, n_frequencies));
-    sites
-        .iter()
-        .zip(out.axis_iter_mut(Axis(0)))
-        .for_each(|(site, out_amp)| bayless_abrahamson_2018_eas_one(site, out_amp));
+    azip!((site in sites, out in out.axis_iter_mut(Axis(0))) {
+        bayless_abrahamson_2018_eas_one(site, out)
+    });
     out
 }
 

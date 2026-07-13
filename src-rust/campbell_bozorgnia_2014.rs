@@ -20,7 +20,6 @@
 use crate::campbell_bozorgnia_2014_coefficients::{C11, FREQUENCIES, K1, K2};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
-use ndarray::Zip;
 
 /// Constants for the CB14 (Campbell & Bozorgnia, 2014) model.
 struct CB14Constants {
@@ -81,7 +80,7 @@ fn compute_fs_value(vs30: f64, a1100: f64, c11: f64, k1: f64, k2: f64) -> f64 {
 }
 
 /// Computes the site amplification factor relative to the simulation reference.
-fn campbell_bozorgnia_2014_one(site: &SiteProperties, mut out: ArrayViewMut1<f64>) {
+fn campbell_bozorgnia_2014_one(site: &SiteProperties, out: ArrayViewMut1<f64>) {
     let c11_1000hz = C11[CONSTANTS.idx_1000hz];
     let k1_1000hz = K1[CONSTANTS.idx_1000hz];
     let k2_1000hz = K2[CONSTANTS.idx_1000hz];
@@ -91,29 +90,23 @@ fn campbell_bozorgnia_2014_one(site: &SiteProperties, mut out: ArrayViewMut1<f64
     let fs_vhigh = compute_fs_value(CONSTANTS.vs_high, 0.0, c11_1000hz, k1_1000hz, k2_1000hz);
     let fs_vsim = compute_fs_value(site.vs30_sim, 0.0, c11_1000hz, k1_1000hz, k2_1000hz);
     let a1100 = site.pga * (fs_vhigh - fs_vsim).exp();
-
-    Zip::from(&C11)
-        .and(&K1)
-        .and(&K2)
-        .and(out)
-        .for_each(|&c11, &k1, &k2, out| {
-            // f_site for the actual site conditions
-            let fs_site = compute_fs_value(site.vs30, a1100, c11, k1, k2);
-            // f_site for the simulation reference (linear rock baseline)
-            let fs_sim = compute_fs_value(site.vs30_sim, 0.0, c11, k1, k2);
-            // Amplification = exp(f_site_actual - f_site_sim)
-            *out = (fs_site - fs_sim).exp();
-        })
+    azip!((&c11 in &C11, &k1 in &K1, &k2 in &K2, out in out) {
+        // f_site for the actual site conditions
+        let fs_site = compute_fs_value(site.vs30, a1100, c11, k1, k2);
+        // f_site for the simulation reference (linear rock baseline)
+        let fs_sim = compute_fs_value(site.vs30_sim, 0.0, c11, k1, k2);
+        // Amplification = exp(f_site_actual - f_site_sim)
+        *out = (fs_site - fs_sim).exp();
+    });
 }
 
 pub fn campbell_bozorgnia_2014(sites: &[SiteProperties]) -> Array2<f64> {
     let n_stations = sites.len();
     let n_frequencies = FREQUENCIES.len();
     let mut out = Array2::default((n_stations, n_frequencies));
-    sites
-        .iter()
-        .zip(out.axis_iter_mut(Axis(0)))
-        .for_each(|(site, out_amp)| campbell_bozorgnia_2014_one(site, out_amp));
+    azip!((site in sites, out in out.axis_iter_mut(Axis(0))) {
+        campbell_bozorgnia_2014_one(site, out)
+    });
     out
 }
 
