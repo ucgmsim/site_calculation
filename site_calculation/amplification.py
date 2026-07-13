@@ -1,14 +1,9 @@
 """Amplification models for simulated sites."""
 
-import contextlib
-import multiprocessing
 import typing
-from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
-import pyfftw
 import pyfftw.config as _pyfftw_config
 import pyfftw.interfaces.numpy_fft as pyfftw_fft
 import scipy as sp
@@ -137,16 +132,6 @@ def bayless_abrahamson_2018(
         raise
 
 
-@contextlib.contextmanager
-def _pyfftw_cores(cores: int) -> Generator[None, None, None]:
-    old_cores = pyfftw_config.NUM_THREADS
-    pyfftw_config.NUM_THREADS = cores
-    try:
-        yield
-    finally:
-        pyfftw_config.NUM_THREADS = old_cores
-
-
 def taper(waveform: WaveformArray, taper_percent: float) -> None:
     """Taper the end of a waveform using the Hanning method.
 
@@ -174,7 +159,6 @@ def amplify_waveform(
     waveform: WaveformArray,
     amplification_factor: AmplificationArray,
     n_fft: int,
-    cores: int = multiprocessing.cpu_count(),
 ) -> np.ndarray:
     """Apply amplification factor to waveforms.
 
@@ -188,10 +172,6 @@ def amplify_waveform(
         ``n_fft // 2 + 1`` values along the last axis.
     n_fft : int
         The FFT length to pad out to.
-    cores : int, optional
-        The number of cores to use for FFT. Defaults to all cores
-        available on the system as reported by
-        `muliprocessing.cpu_count()`.
 
     Returns
     -------
@@ -205,12 +185,11 @@ def amplify_waveform(
             "amplification_factor must have n_fft // 2 + 1 frequency values."
         )
 
-    with _pyfftw_cores(cores):
-        fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
+    fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
 
-        fourier *= amplification_factor.astype(waveform.dtype)
+    fourier *= amplification_factor.astype(waveform.dtype)
 
-        result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
+    result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
 
     # Trim to original length
     return result_full[..., :nt]
@@ -300,9 +279,7 @@ def amp_lowpass(
     if fmin < 1e-6:
         raise ValueError("Lowpass requires fmin > 0.")
     if fftfreq.size != ampf.shape[-1]:
-        raise ValueError(
-            "fftfreq and ampf must have the same number of frequencies."
-        )
+        raise ValueError("fftfreq and ampf must have the same number of frequencies.")
     ampf[:, fftfreq < fmin] = 1.0
     low_frequency_taper_mask = (fftfreq >= fmin) & (fftfreq < fmidbot)
     log_fmin_diff = (np.log(fftfreq[low_frequency_taper_mask]) - np.log(fmin)) / (
@@ -353,14 +330,12 @@ def amp_highpass(
     if fhightop < 1e-6:
         raise ValueError("Highpass requires fhightop > 0.")
     if fftfreq.size != ampf.shape[-1]:
-        raise ValueError(
-            "fftfreq and ampf must have the same number of frequencies."
-        )
+        raise ValueError("fftfreq and ampf must have the same number of frequencies.")
     ampf[:, fftfreq >= fmax] = 1.0
     high_frequency_taper_mask = (fhightop <= fftfreq) & (fftfreq < fmax)
-    high_fmin_diff = (
-        np.log(fftfreq[high_frequency_taper_mask]) - np.log(fhightop)
-    ) / (np.log(fmax) - np.log(fhightop))
+    high_fmin_diff = (np.log(fftfreq[high_frequency_taper_mask]) - np.log(fhightop)) / (
+        np.log(fmax) - np.log(fhightop)
+    )
     ampf[:, high_frequency_taper_mask] = (
         ampf[:, high_frequency_taper_mask] * (1.0 - high_fmin_diff) + high_fmin_diff
     )
