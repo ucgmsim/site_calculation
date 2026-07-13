@@ -1,6 +1,6 @@
 # Site Calculation
 
-This repo implements the basics of the site calculation package. This incorporates both the Bayless 2018 model *and* the Campbell and Borzognia 2014 model. It is intended to replace the qcore modules for the same task, as well as being a future home for site calculations including things like backarc modules, kappa0 models, etc in the future. This repo incorporates the lessons of previous designs of this code including:
+This repo implements the basics of the site calculation package. This incorporates both the Bayless 2018 model *and* the Campbell and Bozorgnia 2014 model. It is intended to replace the qcore modules for the same task, as well as being a future home for site calculations including things like backarc modules, kappa0 models, etc in the future. This repo incorporates the lessons of previous designs of this code including:
 
 1. **Copious documentation**. Prior implementations of site amplification models and the amplification process were not well documented. I have tried very hard to pin the equations in the rust code `src-rust/bayless_abrahamson_2018.rs` and `src-rust/campbell_bozorgnia_2014.rs` to equations in the paper and document changes in the models per Felipe's thesis.
 2. **Rust over numba for complex high-performance code**. The benefits of rust code include: speed, correctness, existing library of high-performance code. Numba is great for small blocks, but for code we intend to maintain long-term rust's usability beats Numba's conveniences.
