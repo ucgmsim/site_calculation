@@ -12,4 +12,4 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
-      - run: uv run --all-groups deptry .
+      - run: uv run --group dev deptry .
