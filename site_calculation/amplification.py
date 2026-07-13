@@ -165,9 +165,8 @@ def taper(waveform: WaveformArray, taper_percent: float) -> None:
     nt = waveform.shape[-1]
     ntap = int(nt * taper_percent)
     if ntap > 0:
-        # Create a Hanning window for the taper, ensuring it's float32
+        # Create a Hanning window for the taper, ensuring it's the same dtype as the waveform
         hanning_window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(waveform.dtype)
-        # Create a copy of the original waveform so-as not to modify it in-place.
         waveform[..., nt - ntap :] *= hanning_window
 
 
@@ -184,9 +183,9 @@ def amplify_waveform(
     waveform : np.ndarray
         The input waveform.
     amplification_factor : np.ndarray
-        The frequency amplification factors. If `waveform` has
-        length `2^i`, then `amplification_factor` should have length `2^(ceil(i) -
-        1)`.
+        The frequency amplification factors, sampled at the FFT output
+        frequencies ``np.fft.rfftfreq(n_fft, dt)``. Must have
+        ``n_fft // 2 + 1`` values along the last axis.
     n_fft : int
         The FFT length to pad out to.
     cores : int, optional
@@ -197,10 +196,14 @@ def amplify_waveform(
     Returns
     -------
     np.ndarray
-        The input waveform (de)amplified at frequencies according to
+        The input waveform amplified at frequencies according to
         the values of `amplification_factor`.
     """
     nt = waveform.shape[-1]
+    if amplification_factor.shape[-1] != n_fft // 2 + 1:
+        raise ValueError(
+            "amplification_factor must have n_fft // 2 + 1 frequency values."
+        )
 
     with _pyfftw_cores(cores):
         fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
@@ -235,12 +238,26 @@ def interpolate_frequencies(
     AmplificationArray
         The amplification array interpolated from the model
         frequencies into the output frequencies. The frequencies are
-        interpolated in log-space.
+        interpolated in log-space. Output frequencies outside the
+        model's frequency range (including the DC frequency) are
+        clamped to the nearest model frequency.
     """
+    log_model_frequencies = np.log(model_frequencies)
     interpolator = sp.interpolate.make_interp_spline(
-        np.log(model_frequencies), amplification_array, k=1, axis=-1
+        log_model_frequencies, amplification_array, k=1, axis=-1
     )
-    return interpolator(np.log(output_frequencies))
+    # log(0) = -inf at the DC frequency; clamping maps it (and any
+    # frequency beyond the model's range) to the nearest endpoint
+    # rather than extrapolating.
+    with np.errstate(divide="ignore"):
+        log_output_frequencies = np.log(output_frequencies)
+    return interpolator(
+        np.clip(
+            log_output_frequencies,
+            log_model_frequencies[0],
+            log_model_frequencies[-1],
+        )
+    )
 
 
 def amp_lowpass(
@@ -282,17 +299,24 @@ def amp_lowpass(
     """
     if fmin < 1e-6:
         raise ValueError("Lowpass requires fmin > 0.")
+    if fftfreq.size != ampf.shape[-1]:
+        raise ValueError(
+            "fftfreq and ampf must have the same number of frequencies."
+        )
     ampf[:, fftfreq < fmin] = 1.0
-    log_fmin_diff = (np.log(fftfreq) - np.log(fmin)) / (np.log(fmidbot) - np.log(fmin))
     low_frequency_taper_mask = (fftfreq >= fmin) & (fftfreq < fmidbot)
-    np.multiply(ampf, log_fmin_diff, out=ampf, where=low_frequency_taper_mask)
-    np.add(ampf, 1 - log_fmin_diff, out=ampf, where=low_frequency_taper_mask)
+    log_fmin_diff = (np.log(fftfreq[low_frequency_taper_mask]) - np.log(fmin)) / (
+        np.log(fmidbot) - np.log(fmin)
+    )
+    ampf[:, low_frequency_taper_mask] = 1.0 + log_fmin_diff * (
+        ampf[:, low_frequency_taper_mask] - 1.0
+    )
 
 
 def amp_highpass(
     fftfreq: FrequencyArray, ampf: AmplificationArray, fhightop: float, fmax: float
 ) -> None:
-    """Lowpass filter site amplification.
+    """Highpass filter site amplification.
 
     Modifies ``ampf`` array in place setting all amplification above
     ``fmax`` to be ``1.0``, and does not change amplification below
@@ -326,10 +350,17 @@ def amp_highpass(
     --------
     amp_lowpass : Lowpass filter site amplification.
     """
+    if fhightop < 1e-6:
+        raise ValueError("Highpass requires fhightop > 0.")
+    if fftfreq.size != ampf.shape[-1]:
+        raise ValueError(
+            "fftfreq and ampf must have the same number of frequencies."
+        )
     ampf[:, fftfreq >= fmax] = 1.0
-    high_fmin_diff = (np.log(fftfreq) - np.log(fhightop)) / (
-        np.log(fmax) - np.log(fhightop)
-    )
     high_frequency_taper_mask = (fhightop <= fftfreq) & (fftfreq < fmax)
-    np.multiply(ampf, 1 - high_fmin_diff, out=ampf, where=high_frequency_taper_mask)
-    np.add(ampf, high_fmin_diff, out=ampf, where=high_frequency_taper_mask)
+    high_fmin_diff = (
+        np.log(fftfreq[high_frequency_taper_mask]) - np.log(fhightop)
+    ) / (np.log(fmax) - np.log(fhightop))
+    ampf[:, high_frequency_taper_mask] = (
+        ampf[:, high_frequency_taper_mask] * (1.0 - high_fmin_diff) + high_fmin_diff
+    )
