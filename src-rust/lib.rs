@@ -23,17 +23,25 @@ mod _utils {
         vs30_py: PyReadonlyArray1<f64>,
         vs30_sim_py: PyReadonlyArray1<f64>,
         pga_py: PyReadonlyArray1<f64>,
-    ) -> Vec<SiteProperties> {
-        let vs30 = vs30_py.as_slice().expect("Vs30 must be contiguous");
-        let vs30_sim = vs30_sim_py.as_slice().expect("Vs30 sim must be contiguous");
-        let pga = pga_py.as_slice().expect("PGA must be contiguous");
-        izip!(vs30, vs30_sim, pga)
+    ) -> PyResult<Vec<SiteProperties>> {
+        let vs30 = vs30_py.as_array();
+        let vs30_sim = vs30_sim_py.as_array();
+        let pga = pga_py.as_array();
+
+        let len = vs30.len();
+        if vs30_sim.len() != len || pga.len() != len {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "vs30, vs30_sim, and pga arrays must have the same length",
+            ));
+        }
+
+        Ok(izip!(vs30.iter(), vs30_sim.iter(), pga.iter())
             .map(|(&vs30_one, &vs30_sim_one, &pga_one)| SiteProperties {
                 vs30: vs30_one,
                 vs30_sim: vs30_sim_one,
                 pga: pga_one,
             })
-            .collect()
+            .collect())
     }
 
     #[pyfunction]
@@ -42,9 +50,9 @@ mod _utils {
         vs30_py: PyReadonlyArray1<f64>,
         vs30_sim_py: PyReadonlyArray1<f64>,
         pga_py: PyReadonlyArray1<f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
-        let sites = collect_site_properties(vs30_py, vs30_sim_py, pga_py);
-        bayless_abrahamson_2018::bayless_abrahamson_2018_eas(sites.as_slice()).into_pyarray(py)
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let sites = collect_site_properties(vs30_py, vs30_sim_py, pga_py)?;
+        Ok(bayless_abrahamson_2018::bayless_abrahamson_2018_eas(sites.as_slice()).into_pyarray(py))
     }
 
     #[pyfunction]
@@ -74,8 +82,8 @@ mod _utils {
         vs30_py: PyReadonlyArray1<f64>,
         vs30_sim_py: PyReadonlyArray1<f64>,
         pga_py: PyReadonlyArray1<f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
-        let sites = collect_site_properties(vs30_py, vs30_sim_py, pga_py);
-        campbell_bozorgnia_2014::campbell_bozorgnia_2014(sites.as_slice()).into_pyarray(py)
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let sites = collect_site_properties(vs30_py, vs30_sim_py, pga_py)?;
+        Ok(campbell_bozorgnia_2014::campbell_bozorgnia_2014(sites.as_slice()).into_pyarray(py))
     }
 }

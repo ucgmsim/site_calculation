@@ -32,6 +32,13 @@ BAYLESS_ABRAHAMSON_2018_FREQUENCIES: FrequencyArray = (
 )
 
 
+def _validate_inputs(vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray) -> None:
+    if np.any(vs30 <= 0) or np.any(vs30_sim <= 0):
+        raise ValueError("vs30 and vs30_sim must be strictly positive.")
+    if np.any(pga < 0):
+        raise ValueError("pga must be non-negative.")
+
+
 def campbell_bozorgnia_2014(
     vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
 ) -> AmplificationArray:  # pragma: no cover
@@ -74,13 +81,9 @@ def campbell_bozorgnia_2014(
     broadband ground-motion simulations. Earthquake Spectra.
     2025;41(2):1272-1313.
     """
-
+    _validate_inputs(vs30, vs30_sim, pga)
     try:
-        return _utils._campbell_bozorgnia_2014(
-            np.ascontiguousarray(vs30),
-            np.ascontiguousarray(vs30_sim),
-            np.ascontiguousarray(pga),
-        )
+        return _utils._campbell_bozorgnia_2014(vs30, vs30_sim, pga)
     except TypeError as e:
         e.add_note("All arrays must have float64 dtype.")
         raise
@@ -128,19 +131,15 @@ def bayless_abrahamson_2018(
     broadband ground-motion simulations. Earthquake Spectra.
     2025;41(2):1272-1313.
     """
-
+    _validate_inputs(vs30, vs30_sim, pga)
     try:
-        return _utils._bayless_abrahamson_2018_eas(
-            np.ascontiguousarray(vs30),
-            np.ascontiguousarray(vs30_sim),
-            np.ascontiguousarray(pga),
-        )
+        return _utils._bayless_abrahamson_2018_eas(vs30, vs30_sim, pga)
     except TypeError as e:
         e.add_note("All arrays must have float64 dtype.")
         raise
 
 
-def taper(waveform: WaveformArray, taper_percent: float) -> None:
+def taper(waveform: WaveformArray, taper_quantile: float) -> None:
     """Taper the end of a waveform using the Hanning method.
 
     Parameters
@@ -156,7 +155,7 @@ def taper(waveform: WaveformArray, taper_percent: float) -> None:
     np.hanning : The hanning taper used.
     """
     nt = waveform.shape[-1]
-    ntap = int(nt * taper_percent)
+    ntap = int(nt * taper_quantile)
     if ntap > 0:
         # Create a Hanning window for the taper, ensuring it's the same dtype as the waveform
         hanning_window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(waveform.dtype)
@@ -288,13 +287,13 @@ def amp_lowpass(
         raise ValueError("Lowpass requires fmin > 0.")
     if fftfreq.size != ampf.shape[-1]:
         raise ValueError("fftfreq and ampf must have the same number of frequencies.")
-    ampf[:, fftfreq < fmin] = 1.0
+    ampf[..., fftfreq < fmin] = 1.0
     low_frequency_taper_mask = (fftfreq >= fmin) & (fftfreq < fmidbot)
     log_fmin_diff = (np.log(fftfreq[low_frequency_taper_mask]) - np.log(fmin)) / (
         np.log(fmidbot) - np.log(fmin)
     )
-    ampf[:, low_frequency_taper_mask] = 1.0 + log_fmin_diff * (
-        ampf[:, low_frequency_taper_mask] - 1.0
+    ampf[..., low_frequency_taper_mask] = 1.0 + log_fmin_diff * (
+        ampf[..., low_frequency_taper_mask] - 1.0
     )
 
 
@@ -339,11 +338,11 @@ def amp_highpass(
         raise ValueError("Highpass requires fhightop > 0.")
     if fftfreq.size != ampf.shape[-1]:
         raise ValueError("fftfreq and ampf must have the same number of frequencies.")
-    ampf[:, fftfreq >= fmax] = 1.0
+    ampf[..., fftfreq >= fmax] = 1.0
     high_frequency_taper_mask = (fhightop <= fftfreq) & (fftfreq < fmax)
     high_fmin_diff = (np.log(fftfreq[high_frequency_taper_mask]) - np.log(fhightop)) / (
         np.log(fmax) - np.log(fhightop)
     )
-    ampf[:, high_frequency_taper_mask] = (
-        ampf[:, high_frequency_taper_mask] * (1.0 - high_fmin_diff) + high_fmin_diff
+    ampf[..., high_frequency_taper_mask] = (
+        ampf[..., high_frequency_taper_mask] * (1.0 - high_fmin_diff) + high_fmin_diff
     )
