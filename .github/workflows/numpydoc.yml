@@ -23,4 +23,4 @@ jobs:
           pip install numpydoc
       - name: Run Numpydoc Lint
         run: |
-          fdfind . site_calculation/ -E "__init__.py" -E ccldpy.py --extension py | xargs numpydoc lint
+          fdfind . site_calculation/ -E "__init__.py" --extension py | xargs numpydoc lint
