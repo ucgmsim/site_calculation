@@ -192,6 +192,10 @@ def amplify_waveform(
         raise ValueError(
             "amplification_factor must have n_fft // 2 + 1 frequency values."
         )
+    if waveform.ndim > 1 and waveform.shape[0] != amplification_factor.shape[0]:
+        raise ValueError(
+            "The number of stations in waveform and amplification_factor must match."
+        )
 
     fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
 
@@ -229,6 +233,11 @@ def interpolate_frequencies(
         model's frequency range (including the DC frequency) are
         clamped to the nearest model frequency.
     """
+    if amplification_array.shape[-1] != len(model_frequencies):
+        raise ValueError(
+            f"The last dimension of amplification_array ({amplification_array.shape[-1]}) "
+            f"must match the number of model_frequencies ({len(model_frequencies)})."
+        )
     log_model_frequencies = np.log(model_frequencies)
     interpolator = sp.interpolate.make_interp_spline(
         log_model_frequencies, amplification_array, k=1, axis=-1
@@ -286,6 +295,8 @@ def amp_lowpass(
     """
     if fmin < 1e-6:
         raise ValueError("Lowpass requires fmin > 0.")
+    if fmidbot <= fmin:
+        raise ValueError("Lowpass requires fmidbot > fmin.")
     if fftfreq.size != ampf.shape[-1]:
         raise ValueError("fftfreq and ampf must have the same number of frequencies.")
     ampf[:, fftfreq < fmin] = 1.0
@@ -337,6 +348,8 @@ def amp_highpass(
     """
     if fhightop < 1e-6:
         raise ValueError("Highpass requires fhightop > 0.")
+    if fmax <= fhightop:
+        raise ValueError("Highpass requires fmax > fhightop.")
     if fftfreq.size != ampf.shape[-1]:
         raise ValueError("fftfreq and ampf must have the same number of frequencies.")
     ampf[:, fftfreq >= fmax] = 1.0
