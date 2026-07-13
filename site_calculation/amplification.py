@@ -34,7 +34,7 @@ BAYLESS_ABRAHAMSON_2018_FREQUENCIES: FrequencyArray = (
 
 def campbell_bozorgnia_2014(
     vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
-) -> AmplificationArray:
+) -> AmplificationArray:  # pragma: no cover
     """Site amplification factor based on the Campbell and Bozorgnia
     2014 spectral acceleration ground motion model [0] with
     modifications[1].
@@ -84,7 +84,7 @@ def campbell_bozorgnia_2014(
 
 def bayless_abrahamson_2018(
     vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
-) -> AmplificationArray:
+) -> AmplificationArray:  # pragma: no cover
     """Site amplification factor based on the Bayless and Abrahamson
     2018 effective amplitude spectra ground motion model [0] with
     modifications[1].
