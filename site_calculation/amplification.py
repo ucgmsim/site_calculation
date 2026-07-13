@@ -280,6 +280,8 @@ def amp_lowpass(
     --------
     amp_highpass : Highpass filter site amplification.
     """
+    if fmin < 1e-6:
+        raise ValueError("Lowpass requires fmin > 0.")
     ampf[:, fftfreq < fmin] = 1.0
     log_fmin_diff = (np.log(fftfreq) - np.log(fmin)) / (np.log(fmidbot) - np.log(fmin))
     low_frequency_taper_mask = (fftfreq >= fmin) & (fftfreq < fmidbot)
