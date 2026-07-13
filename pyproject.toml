@@ -22,7 +22,7 @@ dev = ["deptry", "ruff", "ty", "numpydoc"]
 
 
 [tool.deptry]
-optional_dependencies_dev_groups = ["test", "types"]
+pep621_dev_dependency_groups = ["test", "types"]
 
 [tool.pytest]
 markers = ["slow: mark a test as slow"]
