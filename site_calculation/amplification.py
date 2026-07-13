@@ -146,8 +146,8 @@ def taper(waveform: WaveformArray, taper_quantile: float) -> None:
     ----------
     waveform : WaveformArray
         The input waveform.
-    taper_percent : float
-        The taper percentage. The last ``taper_percent * nt`` values
+    taper_quantile : float
+        The taper quantile. The last ``taper_quantile * nt`` values
         should taper to 0.0.
 
     See Also
