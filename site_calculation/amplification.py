@@ -33,6 +33,23 @@ BAYLESS_ABRAHAMSON_2018_FREQUENCIES: FrequencyArray = (
 
 
 def _validate_inputs(vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray) -> None:
+    """Validate inputs for amplification model functions.
+
+    Parameters
+    ----------
+    vs30 : ValueArray
+        Vs30 values for station.
+    vs30_sim : ValueArray
+        Vs30 values in simulation.
+    pga : ValueArray
+        Peak ground acceleration values.
+
+    Raises
+    ------
+    ValueError
+        If any ``vs30`` or ``vs30_sim`` value is non-positive, or if any
+        ``pga`` value is negative.
+    """
     if np.any(vs30 <= 0) or np.any(vs30_sim <= 0):
         raise ValueError("vs30 and vs30_sim must be strictly positive.")
     if np.any(pga < 0):
