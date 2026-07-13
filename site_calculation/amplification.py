@@ -126,7 +126,7 @@ def bayless_abrahamson_2018(
     """
 
     try:
-        return _utils._bayless_abrahamson_2018(vs30, vs30_sim, pga)
+        return _utils._bayless_abrahamson_2018_eas(vs30, vs30_sim, pga)
     except TypeError as e:
         e.add_note("All arrays must have float64 dtype.")
         raise
