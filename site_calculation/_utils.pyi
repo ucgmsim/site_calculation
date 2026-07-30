@@ -2,8 +2,8 @@
 
 import numpy as np
 
-FloatArray1D = np.ndarray[tuple[int], np.dtype[np.float64]]
-FloatArray2D = np.ndarray[tuple[int, int], np.dtype[np.float64]]
+type FloatArray1D = np.ndarray[tuple[int], np.dtype[np.float64]]
+type FloatArray2D = np.ndarray[tuple[int, int], np.dtype[np.float64]]
 
 def _bayless_abrahamson_2018_eas(
     vs30_py: FloatArray1D,

@@ -7,7 +7,7 @@ name = "site-calculation"
 authors = [{ name = "ucgmsim" }]
 description = "Site calculation models, including source-site distances and amplification models"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = ["numpy>=2", "pyfftw>=0.15.1", "scipy>=1.17.0"]
 
