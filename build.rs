@@ -87,7 +87,6 @@ fn ba18_model_coefficients() {
         c8.push(record.c8.unwrap_or(f64::NAN))
     }
 
-    // 3. Generate the Rust code.
     // `{:?}` renders a NaN as the bare token `NaN`, which is not a valid f64
     // literal, so the c8 array (whose gaps above 24 Hz are NaN sentinels) is
     // formatted explicitly.
@@ -143,7 +142,6 @@ pub static IR_REF_C8_IDX: usize = {};
         ir_ref_c8_idx
     );
 
-    // 4. Write to the output directory
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = Path::new(&out_dir).join("bayless_abrahamson_2018_coefficients.rs");
     fs::write(dest_path, generated_code).unwrap();
@@ -168,7 +166,6 @@ fn cb14_model_coefficients() {
         k1.push(record.k1);
         k2.push(record.k2);
     }
-    // 3. Generate the Rust code
     let generated_code = format!(
         r#"
 pub static FREQUENCIES: [f64; {}] = {:?};
@@ -186,7 +183,6 @@ pub static K2: [f64; {}] = {:?};
         k2,
     );
 
-    // 4. Write to the output directory
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = Path::new(&out_dir).join("campbell_bozorgnia_2014_coefficients.rs");
     fs::write(dest_path, generated_code).unwrap();
