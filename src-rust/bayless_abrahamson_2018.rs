@@ -14,71 +14,28 @@
 //! broadband ground-motion simulations. Earthquake Spectra.
 //! 2025;41(2):1272-1313.
 
-use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
+use crate::bayless_abrahamson_2018_coefficients::{
+    C8, CONSTANTS, F3, F4, F5, FREQUENCIES, IR_REF_C8_IDX, REF_C8_IDX,
+};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
 use std::f64::consts::PI;
-use std::sync::LazyLock;
 
-/// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
-struct BA18Constants {
-    pub v1: f64,                 // Linear reference velocity (1000 m/s)
-    pub v_ref: f64,              // Nonlinear reference velocity (760 m/s)
-    pub f_kappa_transition: f64, // Frequency for kappa extrapolation (24 Hz)
-    pub ir_ref_frequency: f64,   // Frequency the Ir reference site factor is taken at (5 Hz)
-}
+// NOTE: CONSTANTS is constructed at build-time but for reference it looks like
+// /// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
+// struct BA18Constants {
+//     pub v1: f64,                 // Linear reference velocity (1000 m/s)
+//     pub v_ref: f64,              // Nonlinear reference velocity (760 m/s)
+//     pub f_kappa_transition: f64, // Frequency for kappa extrapolation (24 Hz)
+//     pub ir_ref_frequency: f64,   // Frequency the Ir reference site factor is taken at (5 Hz)
+// }
 
-const CONSTANTS: BA18Constants = BA18Constants {
-    v1: 1000.0,
-    v_ref: 760.0,
-    f_kappa_transition: 24.0,
-    ir_ref_frequency: 5.0,
-};
-
-/// Relative tolerance when matching a target frequency to a coefficient row.
-///
-/// The BA18 table is sampled on a log-frequency grid of 0.01 decades, i.e.
-/// consecutive rows are ~2.33% apart, so the closest row to any target is
-/// within half a step (~1.17%). A miss wider than that means the table's
-/// frequency grid is no longer the one these lookups were written against.
-const FREQUENCY_MATCH_RTOL: f64 = 0.0117;
-
-/// Index of the coefficient row closest to `target_frequency`.
-///
-/// # Panics
-///
-/// Panics if no row lies within [`FREQUENCY_MATCH_RTOL`] of the target. These
-/// lookups are the only link between the code and the row ordering of
-/// `data/ba18_coefficients.csv`, so a regenerated table with a different
-/// frequency grid must fail loudly rather than silently read the wrong
-/// coefficients.
-fn frequency_index(target_frequency: f64) -> usize {
-    let index = FREQUENCIES
-        .iter()
-        .enumerate()
-        .min_by(|(_, left), (_, right)| {
-            (*left - target_frequency)
-                .abs()
-                .total_cmp(&(*right - target_frequency).abs())
-        })
-        .map(|(index, _)| index)
-        .expect("BA18 coefficient table is empty");
-
-    let frequency = FREQUENCIES[index];
-    assert!(
-        (frequency - target_frequency).abs() / target_frequency <= FREQUENCY_MATCH_RTOL,
-        "BA18 coefficient table has no frequency within {:.2}% of {target_frequency} Hz \
-         (closest is {frequency} Hz at index {index}); the coefficient table's \
-         frequency grid has changed and the model lookups need revisiting",
-        FREQUENCY_MATCH_RTOL * 100.0
-    );
-    index
-}
-
-static REF_C8_IDX: LazyLock<usize> =
-    LazyLock::new(|| frequency_index(CONSTANTS.f_kappa_transition));
-static IR_REF_C8_IDX: LazyLock<usize> =
-    LazyLock::new(|| frequency_index(CONSTANTS.ir_ref_frequency));
+// const CONSTANTS: BA18Constants = BA18Constants {
+//     v1: 1000.0,
+//     v_ref: 760.0,
+//     f_kappa_transition: 24.0,
+//     ir_ref_frequency: 5.0,
+// };
 
 /// Finds the minimum nonlinear site factor across the spectrum to enforce
 /// model constraints on soil softening.
@@ -113,7 +70,7 @@ fn calc_linear_site_factor_with_kappa(vs30: f64, c8: f64, kappa: f64, freq: f64)
     if freq < CONSTANTS.f_kappa_transition {
         calc_f_sl_exponent(vs30, c8)
     } else {
-        let linear_term_ref = calc_f_sl_exponent(vs30, C8[*REF_C8_IDX]);
+        let linear_term_ref = calc_f_sl_exponent(vs30, C8[REF_C8_IDX]);
         let df = freq - CONSTANTS.f_kappa_transition;
 
         linear_term_ref * (-PI * kappa * df).exp()
@@ -170,12 +127,12 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     // Calculate induced intensity (Ir) based on Equation 10e.
     // The frequency grid these coefficient lookups assume is checked in
     // `frequency_index`, which panics (in release builds too) on a mismatch.
-    let c8_5hz = C8[*IR_REF_C8_IDX];
+    let c8_5hz = C8[IR_REF_C8_IDX];
     let ir_sim = calc_f_sl_exponent(site.vs30_sim, c8_5hz);
     // This IR calculation is derived in the e-Supp to Kuncar et al. 2025
     // Equation B.2 of
     // https://journals.sagepub.com/doi/suppl/10.1177/87552930241301059/suppl_file/sj-pdf-1-eqs-10.1177_87552930241301059.pdf
-    let ir_ref_vs = calc_f_sl_exponent(CONSTANTS.v_ref, C8[*IR_REF_C8_IDX]);
+    let ir_ref_vs = calc_f_sl_exponent(CONSTANTS.v_ref, C8[IR_REF_C8_IDX]);
     let ir = site.pga * (ir_ref_vs / ir_sim).powf(0.846);
     let (f_min, f_nl_min) = calc_min_f_nl(ir, site.vs30, CONSTANTS.v_ref);
     (ir, f_min, f_nl_min)
@@ -225,23 +182,15 @@ mod tests {
     fn test_c8_undefined_above_kappa_transition_is_nan() {
         // BA18 does not define c8 above the kappa transition frequency. This
         // checks that trying to access them gives us a NaN.
-        assert!(C8[*REF_C8_IDX].is_finite());
-        assert!(C8[*REF_C8_IDX + 1].is_nan());
-        assert!(FREQUENCIES[*REF_C8_IDX + 1] > CONSTANTS.f_kappa_transition);
+        assert!(C8[REF_C8_IDX].is_finite());
+        assert!(C8[REF_C8_IDX + 1].is_nan());
+        assert!(FREQUENCIES[REF_C8_IDX + 1] > CONSTANTS.f_kappa_transition);
     }
 
     #[test]
     fn test_frequency_index_lookups() {
-        assert_abs_diff_eq!(FREQUENCIES[*REF_C8_IDX], 23.988321, epsilon = 1e-6);
-        assert_abs_diff_eq!(FREQUENCIES[*IR_REF_C8_IDX], 5.011872, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[should_panic(expected = "no frequency within")]
-    fn test_frequency_index_rejects_off_grid_target() {
-        // 200 Hz is well outside the table, so the closest row is nowhere near
-        // half a grid step away and the lookup must refuse it.
-        frequency_index(200.0);
+        assert_abs_diff_eq!(FREQUENCIES[REF_C8_IDX], 23.988321, epsilon = 1e-6);
+        assert_abs_diff_eq!(FREQUENCIES[IR_REF_C8_IDX], 5.011872, epsilon = 1e-6);
     }
 
     #[test]
