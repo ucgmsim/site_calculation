@@ -8,7 +8,7 @@ import pyfftw.config as _pyfftw_config
 import pyfftw.interfaces.numpy_fft as pyfftw_fft
 import scipy as sp
 
-from site_calculation import _utils  # type: ignore[unresolved-import]
+from site_calculation import _utils
 
 if TYPE_CHECKING:
     pyfftw_config = typing.cast(Any, _pyfftw_config)
