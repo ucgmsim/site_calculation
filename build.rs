@@ -38,17 +38,34 @@ fn ba18_model_coefficients() {
         f3.push(record.f3);
         f4.push(record.f4);
         f5.push(record.f5);
-        c8.push(record.c8.unwrap_or(0.0))
+        // BA18 only defines c8 up to the kappa transition frequency (24 Hz);
+        // above it the linear site term is kappa-extrapolated from c8 at that
+        // frequency and c8[idx] is never read. If the extrapolation branch is read beyond 24 Hz then this NaN will ensure the record is corrupted and hence becomes visible to the caller.
+        c8.push(record.c8.unwrap_or(f64::NAN))
     }
 
-    // 3. Generate the Rust code
+    // 3. Generate the Rust code.
+    // `{:?}` renders a NaN as the bare token `NaN`, which is not a valid f64
+    // literal, so the c8 array (whose gaps above 24 Hz are NaN sentinels) is
+    // formatted explicitly.
+    let c8_literals = c8
+        .iter()
+        .map(|value| {
+            if value.is_nan() {
+                "f64::NAN".to_string()
+            } else {
+                format!("{value:?}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let generated_code = format!(
         r#"
 pub static FREQUENCIES: [f64; {}] = {:?};
 pub static F3: [f64; {}] = {:?};
 pub static F4: [f64; {}] = {:?};
 pub static F5: [f64; {}] = {:?};
-pub static C8: [f64; {}] = {:?};
+pub static C8: [f64; {}] = [{}];
 "#,
         frequencies.len(),
         frequencies,
@@ -59,7 +76,7 @@ pub static C8: [f64; {}] = {:?};
         f5.len(),
         f5,
         c8.len(),
-        c8
+        c8_literals,
     );
 
     // 4. Write to the output directory
