@@ -18,6 +18,7 @@ use crate::bayless_abrahamson_2018_coefficients::{C8, F3, F4, F5, FREQUENCIES};
 use crate::site::SiteProperties;
 use ndarray::prelude::*;
 use std::f64::consts::PI;
+use std::sync::LazyLock;
 
 /// Constants for the BA18 (Bayless & Abrahamson, 2018) model.
 struct BA18Constants {
@@ -74,16 +75,10 @@ fn frequency_index(target_frequency: f64) -> usize {
     index
 }
 
-/// Index of c8 at the kappa extrapolation frequency (24 Hz).
-static REF_C8_IDX: usize = frequency_index(CONSTANTS.f_kappa_transition);
-
-/// Index of c8 at 5 Hz, used as the reference for the induced intensity (Ir).
+static REF_C8_IDX: LazyLock<usize> =
+    LazyLock::new(|| frequency_index(CONSTANTS.f_kappa_transition));
 static IR_REF_C8_IDX: LazyLock<usize> =
     LazyLock::new(|| frequency_index(CONSTANTS.ir_ref_frequency));
-
-/// Linear site factor of the nonlinear reference velocity at 5 Hz.
-static IR_REF_VS: LazyLock<f64> =
-    LazyLock::new(|| calc_f_sl_exponent(CONSTANTS.v_ref, C8[*IR_REF_C8_IDX]));
 
 /// Finds the minimum nonlinear site factor across the spectrum to enforce
 /// model constraints on soil softening.
@@ -180,7 +175,8 @@ fn calc_nl_ir_parameters(site: &SiteProperties) -> (f64, f64, f64) {
     // This IR calculation is derived in the e-Supp to Kuncar et al. 2025
     // Equation B.2 of
     // https://journals.sagepub.com/doi/suppl/10.1177/87552930241301059/suppl_file/sj-pdf-1-eqs-10.1177_87552930241301059.pdf
-    let ir = site.pga * (*IR_REF_VS / ir_sim).powf(0.846);
+    let ir_ref_vs = calc_f_sl_exponent(CONSTANTS.v_ref, C8[*IR_REF_C8_IDX]);
+    let ir = site.pga * (ir_ref_vs / ir_sim).powf(0.846);
     let (f_min, f_nl_min) = calc_min_f_nl(ir, site.vs30, CONSTANTS.v_ref);
     (ir, f_min, f_nl_min)
 }
@@ -227,9 +223,8 @@ mod tests {
 
     #[test]
     fn test_c8_undefined_above_kappa_transition_is_nan() {
-        // BA18 does not define c8 above the kappa transition frequency. Those
-        // rows carry a NaN sentinel so that reading one is loud rather than
-        // silently yielding a neutral amplification of 1.0.
+        // BA18 does not define c8 above the kappa transition frequency. This
+        // checks that trying to access them gives us a NaN.
         assert!(C8[*REF_C8_IDX].is_finite());
         assert!(C8[*REF_C8_IDX + 1].is_nan());
         assert!(FREQUENCIES[*REF_C8_IDX + 1] > CONSTANTS.f_kappa_transition);
@@ -239,7 +234,6 @@ mod tests {
     fn test_frequency_index_lookups() {
         assert_abs_diff_eq!(FREQUENCIES[*REF_C8_IDX], 23.988321, epsilon = 1e-6);
         assert_abs_diff_eq!(FREQUENCIES[*IR_REF_C8_IDX], 5.011872, epsilon = 1e-6);
-        assert_abs_diff_eq!(*IR_REF_VS, 1.14234980557, epsilon = 1e-9);
     }
 
     #[test]
