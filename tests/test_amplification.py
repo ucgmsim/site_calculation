@@ -104,6 +104,12 @@ class TestAmplifyWaveform:
         with pytest.raises(ValueError, match="number of stations"):
             amplify_waveform(waveform, amp, n_fft=128)
 
+    def test_1d_waveform_with_2d_amp_raises(self) -> None:
+        waveform: np.ndarray = np.ones(100, dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError, match="number of stations"):
+            amplify_waveform(waveform, amp, n_fft=128)
+
     def test_output_shape(self) -> None:
         waveform = np.ones((1, 100), dtype=np.float32)
         n_fft = 128
