@@ -181,7 +181,8 @@ class TestAmplifyWaveform:
         # and must not be compared against waveform.shape[0].
         waveform = np.ones(100, dtype=np.float32)
         amp = np.ones(65, dtype=np.float64)
-        result = amplify_waveform(waveform, amp, n_fft=128)
+        # Deliberately outside the 2D type hint: 1D input is a supported code path.
+        result = amplify_waveform(waveform, amp, n_fft=128)  # ty: ignore[invalid-argument-type]
         assert result.shape == waveform.shape
 
     def test_n_fft_equal_to_waveform_length_does_not_raise(self) -> None:
