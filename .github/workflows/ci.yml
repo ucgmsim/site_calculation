@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  ci:
+    uses: ucgmsim/meta-ci-action/.github/workflows/ci.yml@v2
+    with:
+      enable-coverage: true
+      cov-package: site_calculation
+      cov-fail-under: 95
