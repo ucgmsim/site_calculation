@@ -24,6 +24,9 @@ dev = ["deptry", "ruff", "ty", "numpydoc"]
 [tool.deptry]
 pep621_dev_dependency_groups = ["test", "types"]
 
+[tool.npdlint]
+include = ["site_calculation"]
+
 [tool.pytest]
 markers = ["slow: mark a test as slow"]
 
