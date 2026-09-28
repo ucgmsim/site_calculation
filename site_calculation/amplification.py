@@ -165,12 +165,14 @@ def taper(waveform: WaveformArray, taper_quantile: float) -> None:
         The input waveform.
     taper_quantile : float
         The taper quantile. The last ``taper_quantile * nt`` values
-        should taper to 0.0.
+        should taper to 0.0. Must be in the range ``[0, 1]``.
 
     See Also
     --------
     np.hanning : The hanning taper used.
     """
+    if not (0 <= taper_quantile <= 1):
+        raise ValueError("Taper requires 0 <= taper_quantile <= 1.")
     nt = waveform.shape[-1]
     ntap = int(nt * taper_quantile)
     if ntap > 0:

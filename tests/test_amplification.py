@@ -88,6 +88,18 @@ class TestTaper:
         taper(waveform, 0.1)  # ty: ignore[invalid-argument-type]
         assert waveform.dtype == np.float64
 
+    def test_quantile_above_one_raises(self) -> None:
+        """A taper_quantile greater than 1 raises a clear ValueError."""
+        waveform = np.ones((1, 10), dtype=np.float32)
+        with pytest.raises(ValueError, match="taper_quantile"):
+            taper(waveform, 1.5)
+
+    def test_negative_quantile_raises(self) -> None:
+        """A negative taper_quantile raises a clear ValueError instead of silently doing nothing."""
+        waveform = np.ones((1, 10), dtype=np.float32)
+        with pytest.raises(ValueError, match="taper_quantile"):
+            taper(waveform, -0.1)
+
 
 class TestAmplifyWaveform:
     """Tests for amplify_waveform."""
