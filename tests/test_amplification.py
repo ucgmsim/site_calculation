@@ -2,6 +2,9 @@
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.extra import numpy as hnp
 
 from site_calculation.amplification import (
     BAYLESS_ABRAHAMSON_2018_FREQUENCIES,
@@ -155,6 +158,16 @@ class TestAmplifyWaveform:
         result = amplify_waveform(waveform, amp, n_fft)
         assert result.shape == waveform.shape
 
+    def test_unit_amplification_is_identity(self) -> None:
+        """A unit amplification factor returns the original waveform in float32."""
+        rng = np.random.default_rng(1)
+        waveform = rng.standard_normal((2, 1000)).astype(np.float32)
+        n_fft = 1024
+        amp = np.ones((2, n_fft // 2 + 1))
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.dtype == np.float32
+        np.testing.assert_allclose(result, waveform, rtol=0, atol=1e-5)
+
 
 class TestInterpolateFrequencies:
     """Tests for interpolate_frequencies."""
@@ -203,6 +216,93 @@ class TestInterpolateFrequencies:
         output_freqs = np.array([1.0, 5.0, 10.0])
         result = interpolate_frequencies(model_freqs, output_freqs, amp)
         assert result.shape == (2, 3)
+
+    def test_matches_np_interp_on_real_model_frequencies(self) -> None:
+        """Matches a per-station np.interp in log-frequency, including DC and out-of-range frequencies."""
+        model_freqs = CAMPBELL_BOZORGNIA_2014_FREQUENCIES
+        rng = np.random.default_rng(0)
+        amp = rng.uniform(0.2, 5.0, (4, len(model_freqs)))
+        output_freqs = np.concatenate(
+            [
+                np.fft.rfftfreq(4096, 0.005),
+                [model_freqs[0] / 10, model_freqs[-1] * 10, 1e300],
+                model_freqs,
+            ]
+        )
+        result = interpolate_frequencies(model_freqs, output_freqs, amp)
+        with np.errstate(divide="ignore"):
+            log_output = np.log(output_freqs)
+        expected = np.array(
+            [np.interp(log_output, np.log(model_freqs), row) for row in amp]
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-12, atol=0)
+        # Model frequencies reproduce the model values (to rounding).
+        np.testing.assert_allclose(
+            result[:, -len(model_freqs) :], amp, rtol=1e-15, atol=0
+        )
+
+    @settings(deadline=None)
+    @given(
+        log_model_frequencies=hnp.arrays(
+            np.float64,
+            st.integers(2, 20),
+            elements=st.floats(-5, 5),
+            unique=True,
+        ).map(np.sort),
+        data=st.data(),
+    )
+    def test_property_matches_np_interp(
+        self, log_model_frequencies: np.ndarray, data: st.DataObject
+    ) -> None:
+        """Log-frequency linear interpolation with end clamping agrees with np.interp."""
+        model_freqs = np.exp(log_model_frequencies)
+        if np.any(np.diff(np.log(model_freqs)) <= 0):
+            return  # exp/log round-trip collapsed two nearby frequencies
+        n_stations = data.draw(st.integers(1, 3))
+        amp = data.draw(
+            hnp.arrays(
+                np.float64,
+                (n_stations, len(model_freqs)),
+                elements=st.floats(-1e3, 1e3),
+            )
+        )
+        output_freqs = data.draw(
+            hnp.arrays(
+                np.float64,
+                st.integers(1, 30),
+                elements=st.one_of(
+                    st.just(0.0),
+                    st.floats(1e-4, 1e4),
+                    st.sampled_from(model_freqs.tolist()),
+                ),
+            )
+        )
+        result = interpolate_frequencies(model_freqs, output_freqs, amp)
+        with np.errstate(divide="ignore"):
+            log_output = np.log(output_freqs)
+        expected = np.array(
+            [np.interp(log_output, np.log(model_freqs), row) for row in amp]
+        )
+        assert result.shape == (n_stations, len(output_freqs))
+        np.testing.assert_allclose(result, expected, rtol=1e-9, atol=1e-9)
+
+    def test_unsorted_model_frequencies_raises(self) -> None:
+        """Model frequencies must be strictly increasing."""
+        model_freqs = np.array([1.0, 10.0, 5.0])
+        amp = np.ones((1, 3))
+        with pytest.raises(ValueError, match="strictly increasing"):
+            interpolate_frequencies(model_freqs, np.array([2.0]), amp)
+
+    def test_single_model_frequency_raises(self) -> None:
+        """At least two model frequencies are required to interpolate."""
+        with pytest.raises(ValueError, match="At least two"):
+            interpolate_frequencies(np.array([1.0]), np.array([2.0]), np.ones((1, 1)))
+
+    def test_non_finite_amplification_raises(self) -> None:
+        """Non-finite amplification values are rejected."""
+        amp = np.array([[1.0, np.nan]])
+        with pytest.raises(ValueError, match="finite"):
+            interpolate_frequencies(np.array([1.0, 10.0]), np.array([2.0]), amp)
 
     def test_last_dim_mismatch_raises(self) -> None:
         """A mismatch between amp's last dimension and model frequencies raises."""
