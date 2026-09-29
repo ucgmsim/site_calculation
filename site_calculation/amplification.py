@@ -261,34 +261,17 @@ def interpolate_frequencies(
         )
     if np.any(np.diff(log_model_frequencies) <= 0):
         raise ValueError("model_frequencies must be strictly increasing.")
-    # log(0) = -inf at the DC frequency; clamping maps it (and any
+    # log(0) = -inf at the DC frequency; np.interp clamps it (and any
     # frequency beyond the model's range) to the nearest endpoint
     # rather than extrapolating.
     with np.errstate(divide="ignore"):
-        log_output_frequencies = np.clip(
-            np.log(output_frequencies),
-            log_model_frequencies[0],
-            log_model_frequencies[-1],
-        )
-    # Piecewise-linear interpolation in log-frequency along the last
-    # axis: find the bracketing model frequencies and lerp between them.
-    # The weights are computed in the same order as a degree-1 B-spline
-    # evaluation, so results match the previous scipy implementation.
-    lower = np.clip(
-        np.searchsorted(log_model_frequencies, log_output_frequencies, side="right")
-        - 1,
-        0,
-        len(log_model_frequencies) - 2,
-    )
-    x0 = log_model_frequencies[lower]
-    x1 = log_model_frequencies[lower + 1]
-    inverse_width = 1.0 / (x1 - x0)
-    amplification_array = np.asarray(amplification_array, dtype=np.float64)
-    lower_weight = inverse_width * (x1 - log_output_frequencies)
-    upper_weight = inverse_width * (log_output_frequencies - x0)
-    return (
-        amplification_array[..., lower] * lower_weight
-        + amplification_array[..., lower + 1] * upper_weight
+        log_output_frequencies = np.log(output_frequencies)
+    return np.apply_along_axis(
+        lambda amplification: np.interp(
+            log_output_frequencies, log_model_frequencies, amplification
+        ),
+        -1,
+        amplification_array,
     )
 
 
