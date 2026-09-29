@@ -75,7 +75,9 @@ class TestValidateInputs:
         vs30 = np.array([400.0, 400.0])
         vs30_sim = np.array([0.0, 500.0])
         pga = np.array([0.1, 0.1])
-        with pytest.raises(ValueError, match="vs30 and vs30_sim must be strictly positive"):
+        with pytest.raises(
+            ValueError, match="vs30 and vs30_sim must be strictly positive"
+        ):
             _validate_inputs(vs30, vs30_sim, pga)
 
     def test_pga_zero_does_not_raise(self) -> None:
