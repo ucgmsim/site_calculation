@@ -58,6 +58,50 @@ class TestValidateInputs:
         pga = np.array([0.1, 0.05])
         _validate_inputs(vs30, vs30_sim, pga)  # no error
 
+    def test_vs30_below_one_does_not_raise(self) -> None:
+        # Only values <= 0 are invalid; small positive values must pass.
+        vs30 = np.array([0.5, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_sim_below_one_does_not_raise(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([0.5, 500.0])
+        pga = np.array([0.1, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_sim_zero_raises(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([0.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(
+            ValueError, match="vs30 and vs30_sim must be strictly positive"
+        ):
+            _validate_inputs(vs30, vs30_sim, pga)
+
+    def test_pga_zero_does_not_raise(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.0, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_error_message_exact(self) -> None:
+        vs30 = np.array([0.0])
+        vs30_sim = np.array([500.0])
+        pga = np.array([0.1])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_inputs(vs30, vs30_sim, pga)
+        assert str(exc_info.value) == "vs30 and vs30_sim must be strictly positive."
+
+    def test_pga_error_message_exact(self) -> None:
+        vs30 = np.array([400.0])
+        vs30_sim = np.array([500.0])
+        pga = np.array([-0.1])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_inputs(vs30, vs30_sim, pga)
+        assert str(exc_info.value) == "pga must be non-negative."
+
 
 class TestTaper:
     """Tests for taper."""
@@ -92,6 +136,21 @@ class TestTaper:
         waveform = np.ones((1, 100), dtype=np.float64)
         taper(waveform, 0.1)  # ty: ignore[invalid-argument-type]
         assert waveform.dtype == np.float64
+
+    def test_ntap_of_exactly_one_still_tapers(self) -> None:
+        # nt * taper_quantile == 1.0 exactly (both binary-exact floats).
+        waveform = np.ones((1, 8), dtype=np.float32)
+        taper(waveform, 0.125)
+        assert waveform[0, -1] == 0.0
+        assert np.all(waveform[0, :-1] == 1.0)
+
+    def test_multiplies_rather_than_overwrites_amplitude(self) -> None:
+        waveform = np.full((1, 100), 2.0, dtype=np.float32)
+        taper(waveform, 0.1)
+        ntap = 10
+        window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(np.float32)
+        expected = 2.0 * window
+        assert waveform[0, 90:] == pytest.approx(expected, rel=1e-5)
 
     def test_quantile_above_one_raises(self) -> None:
         """A taper_quantile greater than 1 raises a clear ValueError."""
@@ -165,6 +224,79 @@ class TestAmplifyWaveform:
         amp = np.ones((3, n_fft // 2 + 1), dtype=np.float64)
         result = amplify_waveform(waveform, amp, n_fft)
         assert result.shape == waveform.shape
+
+    def test_1d_waveform_skips_station_check(self) -> None:
+        # A 1D waveform has no station axis, so amplification_factor's
+        # leading dimension is the frequency axis, not a station count,
+        # and must not be compared against waveform.shape[0].
+        waveform = np.ones(100, dtype=np.float32)
+        amp = np.ones(65, dtype=np.float64)
+        # Deliberately outside the 2D type hint: 1D input is a supported code path.
+        result = amplify_waveform(waveform, amp, n_fft=128)  # ty: ignore[invalid-argument-type]
+        assert result.shape == waveform.shape
+
+    def test_n_fft_equal_to_waveform_length_does_not_raise(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        n_fft = 100
+        amp = np.ones((1, n_fft // 2 + 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.shape == waveform.shape
+
+    def test_minimal_length_waveform_does_not_raise(self) -> None:
+        waveform = np.ones((1, 1), dtype=np.float32)
+        amp = np.ones((1, 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft=1)
+        assert result.shape == waveform.shape
+
+    def test_odd_n_fft_uses_floor_division_for_frequency_count(self) -> None:
+        # n_fft // 2 + 1 (int) must be compared, not n_fft / 2 + 1 (float).
+        waveform = np.ones((1, 50), dtype=np.float32)
+        n_fft = 101
+        amp = np.ones((1, n_fft // 2 + 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.shape == waveform.shape
+
+    def test_amplification_multiplies_frequency_content(self) -> None:
+        rng = np.random.default_rng(0)
+        waveform = rng.standard_normal((1, 64)).astype(np.float32)
+        n_fft = 64
+        amp = np.full((1, n_fft // 2 + 1), 2.0)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result == pytest.approx(2.0 * waveform, rel=1e-4)
+
+    def test_n_fft_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=0)
+        assert str(exc_info.value) == "n_fft must be a positive integer."
+
+    def test_n_fft_length_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 51), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=99)
+        assert str(exc_info.value) == "n_fft must be >= waveform length."
+
+    def test_shape_mismatch_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 10), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=256)
+        assert (
+            str(exc_info.value)
+            == "amplification_factor must have n_fft // 2 + 1 frequency values."
+        )
+
+    def test_station_count_mismatch_error_message_exact(self) -> None:
+        waveform = np.ones((2, 100), dtype=np.float32)
+        amp = np.ones((3, 65), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=128)
+        assert (
+            str(exc_info.value)
+            == "The number of stations in waveform and amplification_factor must match."
+        )
 
     def test_unit_amplification_is_identity(self) -> None:
         """A unit amplification factor returns the original waveform in float32."""
