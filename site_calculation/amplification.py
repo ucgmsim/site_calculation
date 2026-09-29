@@ -203,7 +203,7 @@ def amplify_waveform(
         raise ValueError(
             "amplification_factor must have n_fft // 2 + 1 frequency values."
         )
-    if waveform.ndim > 1 and waveform.shape[0] != amplification_factor.shape[0]:
+    if waveform.shape[:-1] != amplification_factor.shape[:-1]:
         raise ValueError(
             "The number of stations in waveform and amplification_factor must match."
         )
