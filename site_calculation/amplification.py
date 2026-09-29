@@ -1,19 +1,8 @@
 """Amplification models for simulated sites."""
 
-import typing
-from typing import TYPE_CHECKING, Any
-
 import numpy as np
-import pyfftw.config as _pyfftw_config
-import pyfftw.interfaces.numpy_fft as pyfftw_fft
-import scipy as sp
 
 from site_calculation import _utils
-
-if TYPE_CHECKING:
-    pyfftw_config = typing.cast(Any, _pyfftw_config)
-else:
-    pyfftw_config = _pyfftw_config
 
 AmplificationArray = np.ndarray[tuple[int, int], np.dtype[np.float64]]
 WaveformArray = np.ndarray[tuple[int, int], np.dtype[np.float32]]
@@ -58,7 +47,7 @@ def _validate_inputs(vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray) ->
 
 def campbell_bozorgnia_2014(
     vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
-) -> AmplificationArray:  # pragma: no cover
+) -> AmplificationArray:
     """Site amplification factor based on the Campbell and Bozorgnia
     2014 spectral acceleration ground motion model [0] with
     modifications[1].
@@ -108,7 +97,7 @@ def campbell_bozorgnia_2014(
 
 def bayless_abrahamson_2018(
     vs30: ValueArray, vs30_sim: ValueArray, pga: ValueArray
-) -> AmplificationArray:  # pragma: no cover
+) -> AmplificationArray:
     """Site amplification factor based on the Bayless and Abrahamson
     2018 effective amplitude spectra ground motion model [0] with
     modifications[1].
@@ -165,12 +154,14 @@ def taper(waveform: WaveformArray, taper_quantile: float) -> None:
         The input waveform.
     taper_quantile : float
         The taper quantile. The last ``taper_quantile * nt`` values
-        should taper to 0.0.
+        should taper to 0.0. Must be in the range ``[0, 1]``.
 
     See Also
     --------
     np.hanning : The hanning taper used.
     """
+    if not (0 <= taper_quantile <= 1):
+        raise ValueError("Taper requires 0 <= taper_quantile <= 1.")
     nt = waveform.shape[-1]
     ntap = int(nt * taper_quantile)
     if ntap > 0:
@@ -217,11 +208,11 @@ def amplify_waveform(
             "The number of stations in waveform and amplification_factor must match."
         )
 
-    fourier = pyfftw_fft.rfft(waveform, n=n_fft, axis=-1)
+    fourier = np.fft.rfft(waveform, n=n_fft, axis=-1)
 
     fourier *= amplification_factor.astype(waveform.dtype)
 
-    result_full = pyfftw_fft.irfft(fourier, n=n_fft, axis=-1)
+    result_full = np.fft.irfft(fourier, n=n_fft, axis=-1)
 
     # Trim to original length
     return result_full[..., :nt]
@@ -258,21 +249,30 @@ def interpolate_frequencies(
             f"The last dimension of amplification_array ({amplification_array.shape[-1]}) "
             f"must match the number of model_frequencies ({len(model_frequencies)})."
         )
+    if len(model_frequencies) < 2:
+        raise ValueError("At least two model_frequencies are required.")
     log_model_frequencies = np.log(model_frequencies)
-    interpolator = sp.interpolate.make_interp_spline(
-        log_model_frequencies, amplification_array, k=1, axis=-1
-    )
-    # log(0) = -inf at the DC frequency; clamping maps it (and any
+    if not np.all(np.isfinite(log_model_frequencies)) or not np.all(
+        np.isfinite(amplification_array)
+    ):
+        raise ValueError(
+            "model_frequencies must be positive and finite, and "
+            "amplification_array must be finite."
+        )
+    if np.any(np.diff(log_model_frequencies) <= 0):
+        raise ValueError("model_frequencies must be strictly increasing.")
+    # log(0) = -inf at the DC frequency; np.interp clamps it (and any
     # frequency beyond the model's range) to the nearest endpoint
     # rather than extrapolating.
     with np.errstate(divide="ignore"):
         log_output_frequencies = np.log(output_frequencies)
-    return interpolator(
-        np.clip(
-            log_output_frequencies,
-            log_model_frequencies[0],
-            log_model_frequencies[-1],
-        )
+    # Looping np.interp per station is as fast as vectorising, with less memory.
+    return np.apply_along_axis(
+        lambda amplification: np.interp(
+            log_output_frequencies, log_model_frequencies, amplification
+        ),
+        -1,
+        amplification_array,
     )
 
 
