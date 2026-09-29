@@ -266,6 +266,7 @@ def interpolate_frequencies(
     # rather than extrapolating.
     with np.errstate(divide="ignore"):
         log_output_frequencies = np.log(output_frequencies)
+    # Looping np.interp per station is as fast as vectorising, with less memory.
     return np.apply_along_axis(
         lambda amplification: np.interp(
             log_output_frequencies, log_model_frequencies, amplification
