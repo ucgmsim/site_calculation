@@ -13,6 +13,8 @@ from site_calculation.amplification import (
     amp_highpass,
     amp_lowpass,
     amplify_waveform,
+    bayless_abrahamson_2018,
+    campbell_bozorgnia_2014,
     interpolate_frequencies,
     taper,
 )
@@ -444,6 +446,74 @@ class TestAmpHighpass:
         assert ampf.shape == (2, 5)
         expected = np.ones_like(ampf[:, -1])
         assert ampf[:, -1] == pytest.approx(expected)
+
+
+class TestCampbellBozorgnia2014:
+    """Tests for campbell_bozorgnia_2014."""
+
+    def test_output_shape_and_finiteness(self) -> None:
+        """A valid call returns finite values shaped by frequencies."""
+        vs30 = np.array([400.0, 760.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.05])
+        result = campbell_bozorgnia_2014(vs30, vs30_sim, pga)
+        assert result.shape == (2, len(CAMPBELL_BOZORGNIA_2014_FREQUENCIES))
+        assert np.all(np.isfinite(result))
+
+    def test_validates_inputs(self) -> None:
+        """Invalid inputs raise ValueError via _validate_inputs."""
+        vs30 = np.array([0.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(
+            ValueError, match="vs30 and vs30_sim must be strictly positive"
+        ):
+            campbell_bozorgnia_2014(vs30, vs30_sim, pga)
+
+    def test_non_float64_dtype_raises_typeerror_with_note(self) -> None:
+        """Non-float64 dtype inputs raise a TypeError with an explanatory note."""
+        vs30 = np.array([400], dtype=np.int64)
+        vs30_sim = np.array([500], dtype=np.int64)
+        pga = np.array([0.1])
+        with pytest.raises(TypeError) as exc_info:
+            campbell_bozorgnia_2014(vs30, vs30_sim, pga)  # ty: ignore[invalid-argument-type]
+        assert any(
+            "All arrays must have float64 dtype." in note
+            for note in exc_info.value.__notes__
+        )
+
+
+class TestBaylessAbrahamson2018:
+    """Tests for bayless_abrahamson_2018."""
+
+    def test_output_shape_and_finiteness(self) -> None:
+        """A valid call returns finite values shaped by frequencies."""
+        vs30 = np.array([400.0, 760.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.05])
+        result = bayless_abrahamson_2018(vs30, vs30_sim, pga)
+        assert result.shape == (2, len(BAYLESS_ABRAHAMSON_2018_FREQUENCIES))
+        assert np.all(np.isfinite(result))
+
+    def test_validates_inputs(self) -> None:
+        """Invalid inputs raise ValueError via _validate_inputs."""
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, -0.05])
+        with pytest.raises(ValueError, match="pga must be non-negative"):
+            bayless_abrahamson_2018(vs30, vs30_sim, pga)
+
+    def test_non_float64_dtype_raises_typeerror_with_note(self) -> None:
+        """Non-float64 dtype inputs raise a TypeError with an explanatory note."""
+        vs30 = np.array([400], dtype=np.int64)
+        vs30_sim = np.array([500], dtype=np.int64)
+        pga = np.array([0.1])
+        with pytest.raises(TypeError) as exc_info:
+            bayless_abrahamson_2018(vs30, vs30_sim, pga)  # ty: ignore[invalid-argument-type]
+        assert any(
+            "All arrays must have float64 dtype." in note
+            for note in exc_info.value.__notes__
+        )
 
 
 class TestModuleConstants:
