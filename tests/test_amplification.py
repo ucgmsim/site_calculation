@@ -2,14 +2,18 @@
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from site_calculation.amplification import (
     BAYLESS_ABRAHAMSON_2018_FREQUENCIES,
     CAMPBELL_BOZORGNIA_2014_FREQUENCIES,
+    Band,
     _validate_inputs,
     amp_highpass,
     amp_lowpass,
     amplify_waveform,
+    bwfilter,
     interpolate_frequencies,
     taper,
 )
@@ -347,3 +351,144 @@ class TestModuleConstants:
     def test_bayless_frequencies_populated(self) -> None:
         """The Bayless-Abrahamson 2018 frequency array is non-empty."""
         assert len(BAYLESS_ABRAHAMSON_2018_FREQUENCIES) > 0
+
+
+# Filter behaviour depends only on frequencies relative to the
+# sampling rate, so frequencies below are drawn as fractions of the
+# sampling frequency. They are kept well below the Nyquist frequency
+# so that the bilinear transform's frequency warping is negligible.
+dts = st.floats(1e-3, 0.1)
+taper_fractions = st.floats(0.005, 0.03)
+# Bandpass filters only reach the 1/sqrt(2) attenuation at their
+# tapers when the band is wide, otherwise the two edges interact.
+bandpass_widths = st.floats(32.0, 60.0)
+bandpass_low_fractions = st.floats(0.0005, 0.03 / 60.0)
+pass_band_ratios = st.floats(1 / 16, 1 / 4)
+stop_band_ratios = st.floats(4.0, 16.0)
+
+
+def _steady_state_gain(
+    frequency: float, dt: float, taper_frequency: float | np.ndarray, band: Band
+) -> float:
+    """Amplitude of ``bwfilter`` applied to a unit sinusoid.
+
+    The amplitude is fitted over the middle half of the signal to
+    avoid transients at the edges of the filtered waveform.
+    """
+    nt = 32768
+    t = np.arange(nt) * dt
+    filtered = bwfilter(np.sin(2 * np.pi * frequency * t), dt, taper_frequency, band)
+    middle = slice(nt // 4, 3 * nt // 4)
+    basis = np.stack(
+        [
+            np.sin(2 * np.pi * frequency * t[middle]),
+            np.cos(2 * np.pi * frequency * t[middle]),
+        ],
+        axis=1,
+    )
+    coefficients, *_ = np.linalg.lstsq(basis, filtered[middle])
+    return float(np.hypot(*coefficients))
+
+
+class TestBwfilter:
+    """Tests for bwfilter."""
+
+    @settings(deadline=None)
+    @given(
+        dt=dts,
+        taper_fraction=taper_fractions,
+        band=st.sampled_from([Band.LOWPASS, Band.HIGHPASS]),
+    )
+    def test_taper_frequency_attenuation(
+        self, dt: float, taper_fraction: float, band: Band
+    ) -> None:
+        """The amplitude at the taper frequency is 1/sqrt(2)."""
+        taper_frequency = taper_fraction / dt
+        gain = _steady_state_gain(taper_frequency, dt, taper_frequency, band)
+        assert gain == pytest.approx(1 / np.sqrt(2), rel=0.01)
+
+    @settings(deadline=None)
+    @given(dt=dts, low_fraction=bandpass_low_fractions, width=bandpass_widths)
+    def test_bandpass_taper_frequency_attenuation(
+        self, dt: float, low_fraction: float, width: float
+    ) -> None:
+        """The amplitude at both bandpass taper frequencies is 1/sqrt(2)."""
+        tapers = np.array([low_fraction, low_fraction * width]) / dt
+        for taper_frequency in tapers:
+            gain = _steady_state_gain(taper_frequency, dt, tapers, Band.BANDPASS)
+            assert gain == pytest.approx(1 / np.sqrt(2), rel=0.03)
+
+    @settings(deadline=None)
+    @given(dt=dts, taper_fraction=taper_fractions, ratio=pass_band_ratios)
+    def test_lowpass_passes_low_frequencies(
+        self, dt: float, taper_fraction: float, ratio: float
+    ) -> None:
+        """Lowpass leaves frequencies below the taper frequency intact."""
+        taper_frequency = taper_fraction / dt
+        gain = _steady_state_gain(
+            ratio * taper_frequency, dt, taper_frequency, Band.LOWPASS
+        )
+        assert gain == pytest.approx(1.0, abs=0.01)
+
+    @settings(deadline=None)
+    @given(dt=dts, taper_fraction=taper_fractions, ratio=stop_band_ratios)
+    def test_lowpass_removes_high_frequencies(
+        self, dt: float, taper_fraction: float, ratio: float
+    ) -> None:
+        """Lowpass removes frequencies above the taper frequency."""
+        taper_frequency = taper_fraction / dt
+        gain = _steady_state_gain(
+            ratio * taper_frequency, dt, taper_frequency, Band.LOWPASS
+        )
+        assert gain < 0.01
+
+    @settings(deadline=None)
+    @given(dt=dts, taper_fraction=taper_fractions, ratio=stop_band_ratios)
+    def test_highpass_passes_high_frequencies(
+        self, dt: float, taper_fraction: float, ratio: float
+    ) -> None:
+        """Highpass leaves frequencies above the taper frequency intact."""
+        taper_frequency = taper_fraction / dt
+        gain = _steady_state_gain(
+            ratio * taper_frequency, dt, taper_frequency, Band.HIGHPASS
+        )
+        assert gain == pytest.approx(1.0, abs=0.01)
+
+    @settings(deadline=None)
+    @given(dt=dts, taper_fraction=taper_fractions, ratio=pass_band_ratios)
+    def test_highpass_removes_low_frequencies(
+        self, dt: float, taper_fraction: float, ratio: float
+    ) -> None:
+        """Highpass removes frequencies below the taper frequency."""
+        taper_frequency = taper_fraction / dt
+        gain = _steady_state_gain(
+            ratio * taper_frequency, dt, taper_frequency, Band.HIGHPASS
+        )
+        assert gain < 0.01
+
+    @settings(deadline=None)
+    @given(dt=dts, low_fraction=bandpass_low_fractions, width=bandpass_widths)
+    def test_bandpass_passes_band(
+        self, dt: float, low_fraction: float, width: float
+    ) -> None:
+        """Bandpass leaves frequencies in the middle of the band intact."""
+        tapers = np.array([low_fraction, low_fraction * width]) / dt
+        centre = np.sqrt(tapers[0] * tapers[1])
+        gain = _steady_state_gain(centre, dt, tapers, Band.BANDPASS)
+        assert gain == pytest.approx(1.0, abs=0.01)
+
+    @settings(deadline=None)
+    @given(
+        dt=dts,
+        low_fraction=bandpass_low_fractions,
+        width=bandpass_widths,
+        below=pass_band_ratios,
+        above=stop_band_ratios,
+    )
+    def test_bandpass_removes_outside_band(
+        self, dt: float, low_fraction: float, width: float, below: float, above: float
+    ) -> None:
+        """Bandpass removes frequencies below and above the band."""
+        tapers = np.array([low_fraction, low_fraction * width]) / dt
+        assert _steady_state_gain(below * tapers[0], dt, tapers, Band.BANDPASS) < 0.01
+        assert _steady_state_gain(above * tapers[1], dt, tapers, Band.BANDPASS) < 0.01
