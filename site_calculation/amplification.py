@@ -401,8 +401,6 @@ class Band(StrEnum):
 
     HIGHPASS = auto()
     """High-pass filter, filters all frequencies lower than taper frequency."""
-    BANDPASS = auto()
-    """Band-pass filter, filters all frequencies outside bounding frequencies."""
     LOWPASS = auto()
     """Low-pass filter, filters all frequencies greater than taper frequencies."""
 
@@ -410,7 +408,7 @@ class Band(StrEnum):
 def bwfilter(
     waveform: np.ndarray,
     dt: float,
-    taper_frequency: float | np.ndarray,
+    taper_frequency: float,
     band: Band,
 ) -> np.ndarray:
     """Construct and apply a Butterworth filter to a waveform.
@@ -427,11 +425,10 @@ def bwfilter(
         The input waveform. Filtering occurs over the last axis.
     dt : float
         The timestep of the input waveform.
-    taper_frequency : float | np.ndarray
+    taper_frequency : float
         The tapering frequency. If `band` is highpass or lowpass then
         `taper_frequency` is the lower or upper tapering frequency,
-        respectively. If `band` is bandpass, this should be an array
-        of tapering frequencies ``[low_taper, high_taper]``.
+        respectively.
     band : Band
         Changes the kind of filter. See `Band` for details.
 
@@ -449,10 +446,6 @@ def bwfilter(
     match band:
         case Band.HIGHPASS:
             cutoff_frequencies = taper_frequency * _BW_HIGHPASS_SHIFT
-        case Band.BANDPASS:
-            cutoff_frequencies = np.asarray(taper_frequency) * np.array(
-                [_BW_HIGHPASS_SHIFT, _BW_LOWPASS_SHIFT]
-            )
         case Band.LOWPASS:
             cutoff_frequencies = taper_frequency * _BW_LOWPASS_SHIFT
 
