@@ -12,8 +12,8 @@ path = "src-rust/lib.rs"
 [dependencies]
 itertools = "0.14.0"
 ndarray = { version = "0.17.1" }
-numpy = "0.27"
-pyo3 = "0.27"
+numpy = "0.29"
+pyo3 = "0.29"
 
 [dev-dependencies]
 ndarray = { version = "0.17.1", features = ["approx"] }
