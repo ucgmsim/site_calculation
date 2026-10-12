@@ -1,10 +1,9 @@
 """Amplification models for simulated sites."""
 
-import typing
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import scipy as sp
 
 from site_calculation import _utils
 
