@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from hypothesis.extra import numpy as hnp
 
 from site_calculation.amplification import (
     BAYLESS_ABRAHAMSON_2018_FREQUENCIES,
@@ -13,7 +14,9 @@ from site_calculation.amplification import (
     amp_highpass,
     amp_lowpass,
     amplify_waveform,
+    bayless_abrahamson_2018,
     bwfilter,
+    campbell_bozorgnia_2014,
     interpolate_frequencies,
     taper,
 )
@@ -57,6 +60,50 @@ class TestValidateInputs:
         pga = np.array([0.1, 0.05])
         _validate_inputs(vs30, vs30_sim, pga)  # no error
 
+    def test_vs30_below_one_does_not_raise(self) -> None:
+        # Only values <= 0 are invalid; small positive values must pass.
+        vs30 = np.array([0.5, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_sim_below_one_does_not_raise(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([0.5, 500.0])
+        pga = np.array([0.1, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_sim_zero_raises(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([0.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(
+            ValueError, match="vs30 and vs30_sim must be strictly positive"
+        ):
+            _validate_inputs(vs30, vs30_sim, pga)
+
+    def test_pga_zero_does_not_raise(self) -> None:
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.0, 0.1])
+        _validate_inputs(vs30, vs30_sim, pga)  # no error
+
+    def test_vs30_error_message_exact(self) -> None:
+        vs30 = np.array([0.0])
+        vs30_sim = np.array([500.0])
+        pga = np.array([0.1])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_inputs(vs30, vs30_sim, pga)
+        assert str(exc_info.value) == "vs30 and vs30_sim must be strictly positive."
+
+    def test_pga_error_message_exact(self) -> None:
+        vs30 = np.array([400.0])
+        vs30_sim = np.array([500.0])
+        pga = np.array([-0.1])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_inputs(vs30, vs30_sim, pga)
+        assert str(exc_info.value) == "pga must be non-negative."
+
 
 class TestTaper:
     """Tests for taper."""
@@ -91,6 +138,33 @@ class TestTaper:
         waveform = np.ones((1, 100), dtype=np.float64)
         taper(waveform, 0.1)  # ty: ignore[invalid-argument-type]
         assert waveform.dtype == np.float64
+
+    def test_ntap_of_exactly_one_still_tapers(self) -> None:
+        # nt * taper_quantile == 1.0 exactly (both binary-exact floats).
+        waveform = np.ones((1, 8), dtype=np.float32)
+        taper(waveform, 0.125)
+        assert waveform[0, -1] == 0.0
+        assert np.all(waveform[0, :-1] == 1.0)
+
+    def test_multiplies_rather_than_overwrites_amplitude(self) -> None:
+        waveform = np.full((1, 100), 2.0, dtype=np.float32)
+        taper(waveform, 0.1)
+        ntap = 10
+        window = np.hanning(ntap * 2 + 1)[ntap + 1 :].astype(np.float32)
+        expected = 2.0 * window
+        assert waveform[0, 90:] == pytest.approx(expected, rel=1e-5)
+
+    def test_quantile_above_one_raises(self) -> None:
+        """A taper_quantile greater than 1 raises a clear ValueError."""
+        waveform = np.ones((1, 10), dtype=np.float32)
+        with pytest.raises(ValueError, match="taper_quantile"):
+            taper(waveform, 1.5)
+
+    def test_negative_quantile_raises(self) -> None:
+        """A negative taper_quantile raises a clear ValueError instead of silently doing nothing."""
+        waveform = np.ones((1, 10), dtype=np.float32)
+        with pytest.raises(ValueError, match="taper_quantile"):
+            taper(waveform, -0.1)
 
 
 class TestAmplifyWaveform:
@@ -131,6 +205,12 @@ class TestAmplifyWaveform:
         with pytest.raises(ValueError, match="number of stations"):
             amplify_waveform(waveform, amp, n_fft=128)
 
+    def test_1d_waveform_with_2d_amp_raises(self) -> None:
+        waveform: np.ndarray = np.ones(100, dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError, match="number of stations"):
+            amplify_waveform(waveform, amp, n_fft=128)
+
     def test_output_shape(self) -> None:
         """The output shape matches the input waveform shape."""
         waveform = np.ones((1, 100), dtype=np.float32)
@@ -146,6 +226,89 @@ class TestAmplifyWaveform:
         amp = np.ones((3, n_fft // 2 + 1), dtype=np.float64)
         result = amplify_waveform(waveform, amp, n_fft)
         assert result.shape == waveform.shape
+
+    def test_1d_waveform_skips_station_check(self) -> None:
+        # A 1D waveform has no station axis, so amplification_factor's
+        # leading dimension is the frequency axis, not a station count,
+        # and must not be compared against waveform.shape[0].
+        waveform = np.ones(100, dtype=np.float32)
+        amp = np.ones(65, dtype=np.float64)
+        # Deliberately outside the 2D type hint: 1D input is a supported code path.
+        result = amplify_waveform(waveform, amp, n_fft=128)  # ty: ignore[invalid-argument-type]
+        assert result.shape == waveform.shape
+
+    def test_n_fft_equal_to_waveform_length_does_not_raise(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        n_fft = 100
+        amp = np.ones((1, n_fft // 2 + 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.shape == waveform.shape
+
+    def test_minimal_length_waveform_does_not_raise(self) -> None:
+        waveform = np.ones((1, 1), dtype=np.float32)
+        amp = np.ones((1, 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft=1)
+        assert result.shape == waveform.shape
+
+    def test_odd_n_fft_uses_floor_division_for_frequency_count(self) -> None:
+        # n_fft // 2 + 1 (int) must be compared, not n_fft / 2 + 1 (float).
+        waveform = np.ones((1, 50), dtype=np.float32)
+        n_fft = 101
+        amp = np.ones((1, n_fft // 2 + 1), dtype=np.float64)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.shape == waveform.shape
+
+    def test_amplification_multiplies_frequency_content(self) -> None:
+        rng = np.random.default_rng(0)
+        waveform = rng.standard_normal((1, 64)).astype(np.float32)
+        n_fft = 64
+        amp = np.full((1, n_fft // 2 + 1), 2.0)
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result == pytest.approx(2.0 * waveform, rel=1e-4)
+
+    def test_n_fft_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 65), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=0)
+        assert str(exc_info.value) == "n_fft must be a positive integer."
+
+    def test_n_fft_length_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 51), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=99)
+        assert str(exc_info.value) == "n_fft must be >= waveform length."
+
+    def test_shape_mismatch_error_message_exact(self) -> None:
+        waveform = np.ones((1, 100), dtype=np.float32)
+        amp = np.ones((1, 10), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=256)
+        assert (
+            str(exc_info.value)
+            == "amplification_factor must have n_fft // 2 + 1 frequency values."
+        )
+
+    def test_station_count_mismatch_error_message_exact(self) -> None:
+        waveform = np.ones((2, 100), dtype=np.float32)
+        amp = np.ones((3, 65), dtype=np.float64)
+        with pytest.raises(ValueError) as exc_info:
+            amplify_waveform(waveform, amp, n_fft=128)
+        assert (
+            str(exc_info.value)
+            == "The number of stations in waveform and amplification_factor must match."
+        )
+
+    def test_unit_amplification_is_identity(self) -> None:
+        """A unit amplification factor returns the original waveform in float32."""
+        rng = np.random.default_rng(1)
+        waveform = rng.standard_normal((2, 1000)).astype(np.float32)
+        n_fft = 1024
+        amp = np.ones((2, n_fft // 2 + 1))
+        result = amplify_waveform(waveform, amp, n_fft)
+        assert result.dtype == np.float32
+        np.testing.assert_allclose(result, waveform, rtol=0, atol=1e-5)
 
 
 class TestInterpolateFrequencies:
@@ -195,6 +358,93 @@ class TestInterpolateFrequencies:
         output_freqs = np.array([1.0, 5.0, 10.0])
         result = interpolate_frequencies(model_freqs, output_freqs, amp)
         assert result.shape == (2, 3)
+
+    def test_matches_np_interp_on_real_model_frequencies(self) -> None:
+        """Matches a per-station np.interp in log-frequency, including DC and out-of-range frequencies."""
+        model_freqs = CAMPBELL_BOZORGNIA_2014_FREQUENCIES
+        rng = np.random.default_rng(0)
+        amp = rng.uniform(0.2, 5.0, (4, len(model_freqs)))
+        output_freqs = np.concatenate(
+            [
+                np.fft.rfftfreq(4096, 0.005),
+                [model_freqs[0] / 10, model_freqs[-1] * 10, 1e300],
+                model_freqs,
+            ]
+        )
+        result = interpolate_frequencies(model_freqs, output_freqs, amp)
+        with np.errstate(divide="ignore"):
+            log_output = np.log(output_freqs)
+        expected = np.array(
+            [np.interp(log_output, np.log(model_freqs), row) for row in amp]
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-12, atol=0)
+        # Model frequencies reproduce the model values (to rounding).
+        np.testing.assert_allclose(
+            result[:, -len(model_freqs) :], amp, rtol=1e-15, atol=0
+        )
+
+    @settings(deadline=None)
+    @given(
+        log_model_frequencies=hnp.arrays(
+            np.float64,
+            st.integers(2, 20),
+            elements=st.floats(-5, 5),
+            unique=True,
+        ).map(np.sort),
+        data=st.data(),
+    )
+    def test_property_matches_np_interp(
+        self, log_model_frequencies: np.ndarray, data: st.DataObject
+    ) -> None:
+        """Log-frequency linear interpolation with end clamping agrees with np.interp."""
+        model_freqs = np.exp(log_model_frequencies)
+        if np.any(np.diff(np.log(model_freqs)) <= 0):
+            return  # exp/log round-trip collapsed two nearby frequencies
+        n_stations = data.draw(st.integers(1, 3))
+        amp = data.draw(
+            hnp.arrays(
+                np.float64,
+                (n_stations, len(model_freqs)),
+                elements=st.floats(-1e3, 1e3),
+            )
+        )
+        output_freqs = data.draw(
+            hnp.arrays(
+                np.float64,
+                st.integers(1, 30),
+                elements=st.one_of(
+                    st.just(0.0),
+                    st.floats(1e-4, 1e4),
+                    st.sampled_from(model_freqs.tolist()),
+                ),
+            )
+        )
+        result = interpolate_frequencies(model_freqs, output_freqs, amp)
+        with np.errstate(divide="ignore"):
+            log_output = np.log(output_freqs)
+        expected = np.array(
+            [np.interp(log_output, np.log(model_freqs), row) for row in amp]
+        )
+        assert result.shape == (n_stations, len(output_freqs))
+        np.testing.assert_allclose(result, expected, rtol=1e-9, atol=1e-9)
+
+    def test_unsorted_model_frequencies_raises(self) -> None:
+        """Model frequencies must be strictly increasing."""
+        model_freqs = np.array([1.0, 10.0, 5.0])
+        amp = np.ones((1, 3))
+        with pytest.raises(ValueError, match="strictly increasing"):
+            interpolate_frequencies(model_freqs, np.array([2.0]), amp)
+
+    def test_single_model_frequency_raises(self) -> None:
+        """At least two model frequencies are required to interpolate."""
+        with pytest.raises(ValueError, match="At least two"):
+            interpolate_frequencies(np.array([1.0]), np.array([2.0]), np.ones((1, 1)))
+
+    def test_non_finite_amplification_raises(self) -> None:
+        """Non-finite amplification values are rejected."""
+        amp = np.array([[1.0, np.nan]])
+        with pytest.raises(ValueError, match="finite"):
+            interpolate_frequencies(np.array([1.0, 10.0]), np.array([2.0]), amp)
 
     def test_last_dim_mismatch_raises(self) -> None:
         """A mismatch between amp's last dimension and model frequencies raises."""
@@ -336,6 +586,74 @@ class TestAmpHighpass:
         assert ampf.shape == (2, 5)
         expected = np.ones_like(ampf[:, -1])
         assert ampf[:, -1] == pytest.approx(expected)
+
+
+class TestCampbellBozorgnia2014:
+    """Tests for campbell_bozorgnia_2014."""
+
+    def test_output_shape_and_finiteness(self) -> None:
+        """A valid call returns finite values shaped by frequencies."""
+        vs30 = np.array([400.0, 760.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.05])
+        result = campbell_bozorgnia_2014(vs30, vs30_sim, pga)
+        assert result.shape == (2, len(CAMPBELL_BOZORGNIA_2014_FREQUENCIES))
+        assert np.all(np.isfinite(result))
+
+    def test_validates_inputs(self) -> None:
+        """Invalid inputs raise ValueError via _validate_inputs."""
+        vs30 = np.array([0.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.1])
+        with pytest.raises(
+            ValueError, match="vs30 and vs30_sim must be strictly positive"
+        ):
+            campbell_bozorgnia_2014(vs30, vs30_sim, pga)
+
+    def test_non_float64_dtype_raises_typeerror_with_note(self) -> None:
+        """Non-float64 dtype inputs raise a TypeError with an explanatory note."""
+        vs30 = np.array([400], dtype=np.int64)
+        vs30_sim = np.array([500], dtype=np.int64)
+        pga = np.array([0.1])
+        with pytest.raises(TypeError) as exc_info:
+            campbell_bozorgnia_2014(vs30, vs30_sim, pga)  # ty: ignore[invalid-argument-type]
+        assert any(
+            "All arrays must have float64 dtype." in note
+            for note in exc_info.value.__notes__
+        )
+
+
+class TestBaylessAbrahamson2018:
+    """Tests for bayless_abrahamson_2018."""
+
+    def test_output_shape_and_finiteness(self) -> None:
+        """A valid call returns finite values shaped by frequencies."""
+        vs30 = np.array([400.0, 760.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, 0.05])
+        result = bayless_abrahamson_2018(vs30, vs30_sim, pga)
+        assert result.shape == (2, len(BAYLESS_ABRAHAMSON_2018_FREQUENCIES))
+        assert np.all(np.isfinite(result))
+
+    def test_validates_inputs(self) -> None:
+        """Invalid inputs raise ValueError via _validate_inputs."""
+        vs30 = np.array([400.0, 400.0])
+        vs30_sim = np.array([500.0, 500.0])
+        pga = np.array([0.1, -0.05])
+        with pytest.raises(ValueError, match="pga must be non-negative"):
+            bayless_abrahamson_2018(vs30, vs30_sim, pga)
+
+    def test_non_float64_dtype_raises_typeerror_with_note(self) -> None:
+        """Non-float64 dtype inputs raise a TypeError with an explanatory note."""
+        vs30 = np.array([400], dtype=np.int64)
+        vs30_sim = np.array([500], dtype=np.int64)
+        pga = np.array([0.1])
+        with pytest.raises(TypeError) as exc_info:
+            bayless_abrahamson_2018(vs30, vs30_sim, pga)  # ty: ignore[invalid-argument-type]
+        assert any(
+            "All arrays must have float64 dtype." in note
+            for note in exc_info.value.__notes__
+        )
 
 
 class TestModuleConstants:
