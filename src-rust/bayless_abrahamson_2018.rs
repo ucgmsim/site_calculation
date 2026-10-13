@@ -227,6 +227,27 @@ mod tests {
     }
 
     #[test]
+    fn test_linear_site_factor_at_kappa_transition() {
+        // At exactly the transition frequency the kappa extrapolation applies
+        // with df = 0, so the result is the reference linear term and the
+        // supplied c8 (undefined above the transition) is ignored.
+        let vs30 = 650.0;
+        let kappa = calc_kappa(vs30);
+        let expected = calc_f_sl_exponent(vs30, C8[REF_C8_IDX]);
+        let f = CONSTANTS.f_kappa_transition;
+        assert_abs_diff_eq!(
+            calc_linear_site_factor_with_kappa(vs30, f64::NAN, kappa, f),
+            expected,
+            epsilon = 1e-12
+        );
+        assert_abs_diff_eq!(
+            calc_linear_site_factor_with_kappa(vs30, C8[0], kappa, f),
+            expected,
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
     fn test_calc_f2() {
         let vs30 = 650.0;
         let v_ref = CONSTANTS.v_ref;
@@ -273,6 +294,42 @@ mod tests {
         let sf_high = calc_f_s(&site_properties, ir, f_min, f_nl_min, kappa, kappa_sim, 67);
         assert_abs_diff_eq!(sf, 0.822837, epsilon = 1e-5);
         assert_abs_diff_eq!(sf_high, 0.74334, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_f_s_nonlinear_floor_applies_at_f_min() {
+        // For freq >= f_min the nonlinear term is the supplied floor f_nl_min,
+        // including at freq == f_min itself.
+        let site_properties = SiteProperties {
+            vs30: 650.0,
+            vs30_sim: 500.0,
+            pga: 0.46,
+        };
+        let kappa = calc_kappa(site_properties.vs30);
+        let kappa_sim = calc_kappa(site_properties.vs30_sim);
+        let ir = 0.46;
+        let idx = 100;
+        let f_min = FREQUENCIES[idx];
+        let f_nl_min = 0.5;
+        let linear_ratio = calc_linear_site_factor_with_kappa(650.0, C8[idx], kappa, f_min)
+            / calc_linear_site_factor_with_kappa(500.0, C8[idx], kappa_sim, f_min);
+        let sf = calc_f_s(&site_properties, ir, f_min, f_nl_min, kappa, kappa_sim, idx);
+        assert_abs_diff_eq!(sf, linear_ratio * f_nl_min, epsilon = 1e-12);
+
+        // Just below f_min the computed nonlinear term is used instead.
+        let sf_below = calc_f_s(
+            &site_properties,
+            ir,
+            f_min * 1.0001,
+            f_nl_min,
+            kappa,
+            kappa_sim,
+            idx,
+        );
+        let f2 = calc_f2(650.0, CONSTANTS.v_ref, F4[idx], F5[idx]);
+        let f_nl = calc_f_nl_exponent(ir, f2, F3[idx]);
+        assert!((f_nl - f_nl_min).abs() > 1e-3);
+        assert_abs_diff_eq!(sf_below, linear_ratio * f_nl, epsilon = 1e-12);
     }
 
     #[test]
